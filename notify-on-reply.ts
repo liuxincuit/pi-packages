@@ -5,9 +5,11 @@ export default function (pi: ExtensionAPI) {
   let lastInputTime = 0;
   let notifyTimer: ReturnType<typeof setTimeout> | null = null;
   let agentRunning = false;
+  let hasUI = false;
 
   pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
+    hasUI = ctx.hasUI;
+    if (!hasUI) return;
 
     class WatchedEditor extends CustomEditor {
       handleInput(data: string): void {
@@ -34,6 +36,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", async (event) => {
+    if (!hasUI) return;
     agentRunning = false;
 
     if (notifyTimer) clearTimeout(notifyTimer);
@@ -44,7 +47,7 @@ export default function (pi: ExtensionAPI) {
     if (stopReason === "aborted") return;
 
     const agentEndTime = Date.now();
-    const delay = stopReason === "error" ? 15000 : 10000;
+    const delay = stopReason === "error" ? 20000 : 10000;
 
     notifyTimer = setTimeout(async () => {
       notifyTimer = null;
