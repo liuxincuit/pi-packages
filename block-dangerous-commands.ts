@@ -19,8 +19,7 @@ const rules: Rule[] = [
   { pattern: /\bmkfs\b/, reason: "mkfs 是危险操作，已阻止" },
   // 系统命令 (Windows)
   { pattern: /\btaskkill\b/, reason: "taskkill 是危险操作，已阻止" },
-  { pattern: /\bformat\b/, reason: "format 是危险操作，已阻止" },
-  // 包管理
+    // 包管理
   { pattern: /^npm\s+publish\b/, reason: "npm publish 是危险操作，已阻止" },
   { pattern: /^pip\s+uninstall\b/, reason: "pip uninstall 是危险操作，已阻止" },
 ];
