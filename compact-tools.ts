@@ -1,0 +1,51 @@
+import { Container, Text } from "@earendil-works/pi-tui";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
+
+const BORDER = "\u2502 "; // │
+
+function titleLine(label: string, detail: string, t: any, isErr?: boolean): string {
+	if (isErr) {
+		return t.fg("error", BORDER) + t.fg("error", t.bold(label + " ")) + t.fg("error", detail);
+	}
+	return t.fg("border", BORDER) + t.bold(label + " ") + detail;
+}
+
+function addBorder(text: string, t: any, isErr?: boolean): string {
+	const clr = isErr ? "error" : "border";
+	return text.split("\n").map((l: string) => t.fg(clr, BORDER) + l).join("\n");
+}
+
+export default function (pi: any) {
+	const cwd = process.cwd();
+
+	function registerTool(tool: any, label: string, getDetail: (a: any) => string) {
+		pi.registerTool({
+			name: tool.name, label: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+			renderShell: "self",
+			execute(...args: any[]) { return tool.execute(...args); },
+			renderCall() { return new Container(); },
+			renderResult(r: any, o: any, t: any, c: any) {
+				const err = c?.isError || r?.isError;
+				if (o.isPartial) return new Container();
+				const detail = getDetail(c?.args || {});
+				if (!o.expanded) {
+					return new Text(titleLine(label, detail, t, err), 0, 0);
+				}
+				const content = r.content?.[0];
+				if (content?.type !== "text") return new Text(titleLine(label, detail, t, err), 0, 0);
+				const lines = [titleLine(label, detail, t, err), addBorder(content.text, t, err)].join("\n");
+				return new Text(lines, 0, 0);
+			},
+		});
+	}
+
+	registerTool(createReadTool(cwd), "read", (a) => a.path || "");
+	registerTool(createBashTool(cwd), "$", (a) => {
+		const cmd = (a.command || "").length > 60 ? (a.command || "").slice(0, 57) + "..." : a.command || "";
+		return cmd;
+	});
+	registerTool(createEditTool(cwd), "edit", (a) => a.path || "");
+	registerTool(createWriteTool(cwd), "write", (a) => a.path || "");
+}
