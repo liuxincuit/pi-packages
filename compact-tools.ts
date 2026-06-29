@@ -33,9 +33,10 @@ export default function (pi: any) {
 				if (!o.expanded) {
 					return new Text(titleLine(label, detail, t, err), 0, 0);
 				}
-				const content = r.content?.[0];
-				if (content?.type !== "text") return new Text(titleLine(label, detail, t, err), 0, 0);
-				const lines = [titleLine(label, detail, t, err), addBorder(content.text, t, err)].join("\n");
+				const parts = r.content?.filter((c: any) => c?.type === "text").map((c: any) => c.text) || [];
+				if (r.details?.diff) parts.push(r.details.diff);
+				if (parts.length === 0) return new Text(titleLine(label, detail, t, err), 0, 0);
+				const lines = [titleLine(label, detail, t, err), ...parts.map((p: string) => addBorder(p, t, err))].join("\n");
 				return new Text(lines, 0, 0);
 			},
 		});
@@ -43,7 +44,7 @@ export default function (pi: any) {
 
 	registerTool(createReadTool(cwd), "read", (a) => a.path || "");
 	registerTool(createBashTool(cwd), "$", (a) => {
-		const cmd = (a.command || "").length > 60 ? (a.command || "").slice(0, 57) + "..." : a.command || "";
+		const cmd = a.command || "";
 		return cmd;
 	});
 	registerTool(createEditTool(cwd), "edit", (a) => a.path || "");
