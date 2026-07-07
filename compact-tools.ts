@@ -15,6 +15,14 @@ function addBorder(text: string, t: any, isErr?: boolean): string {
 	return text.split("\n").map((l: string) => t.fg(clr, BORDER) + l).join("\n");
 }
 
+const MAX_TITLE_LEN = 80;
+
+function truncateDetail(detail: string): string {
+	const firstLine = detail.split("\n")[0] || "";
+	if (firstLine.length <= MAX_TITLE_LEN) return firstLine;
+	return firstLine.slice(0, MAX_TITLE_LEN - 1) + "…";
+}
+
 export default function (pi: any) {
 	const cwd = process.cwd();
 
@@ -31,7 +39,8 @@ export default function (pi: any) {
 				if (o.isPartial) return new Container();
 				const detail = getDetail(c?.args || {});
 				if (!o.expanded) {
-					return new Text(titleLine(label, detail, t, err), 0, 0);
+					const truncated = truncateDetail(detail);
+					return new Text(titleLine(label, truncated, t, err), 0, 0);
 				}
 				const parts = r.content?.filter((c: any) => c?.type === "text").map((c: any) => c.text) || [];
 				if (r.details?.diff) parts.push(r.details.diff);
