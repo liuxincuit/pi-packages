@@ -18,7 +18,7 @@ function addBorder(text: string, t: any): string {
 	return text.split("\n").map((l: string) => t.fg("border", BORDER) + l).join("\n");
 }
 
-const MAX_TITLE_LEN = 80;
+const MAX_TITLE_LEN = 100;
 
 function truncateDetail(detail: string): string {
 	const firstLine = detail.split("\n")[0] || "";
