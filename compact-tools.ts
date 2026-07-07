@@ -3,16 +3,16 @@ import { createBashTool, createEditTool, createReadTool, createWriteTool } from 
 
 const BORDER = "\u2502 "; // │
 
-function titleLine(label: string, detail: string, t: any, isErr?: boolean): string {
-	if (isErr) {
-		return t.fg("error", BORDER) + t.fg("error", t.bold(label + " ")) + t.fg("error", detail);
+function titleLine(label: string, detail: string, t: any, color: string): string {
+	const border = t.fg(color, BORDER);
+	if (color === "error") {
+		return border + t.fg(color, t.bold(label + " ")) + t.fg(color, detail);
 	}
-	return t.fg("border", BORDER) + t.bold(label + " ") + detail;
+	return border + t.bold(label + " ") + detail;
 }
 
-function addBorder(text: string, t: any, isErr?: boolean): string {
-	const clr = isErr ? "error" : "border";
-	return text.split("\n").map((l: string) => t.fg(clr, BORDER) + l).join("\n");
+function addBorder(text: string, t: any): string {
+	return text.split("\n").map((l: string) => t.fg("border", BORDER) + l).join("\n");
 }
 
 const MAX_TITLE_LEN = 80;
@@ -33,19 +33,23 @@ export default function (pi: any) {
 			parameters: tool.parameters,
 			renderShell: "self",
 			execute(...args: any[]) { return tool.execute(...args); },
-			renderCall() { return new Container(); },
+			renderCall(args: any, t: any) {
+				const detail = getDetail(args || {});
+				return new Text(titleLine(label, detail, t, "accent"), 0, 0);
+			},
 			renderResult(r: any, o: any, t: any, c: any) {
-				const err = c?.isError || r?.isError;
 				if (o.isPartial) return new Container();
+				const err = c?.isError || r?.isError;
+				const color = err ? "error" : "success";
 				const detail = getDetail(c?.args || {});
 				if (!o.expanded) {
 					const truncated = truncateDetail(detail);
-					return new Text(titleLine(label, truncated, t, err), 0, 0);
+					return new Text(titleLine(label, truncated, t, color), 0, 0);
 				}
 				const parts = r.content?.filter((c: any) => c?.type === "text").map((c: any) => c.text) || [];
 				if (r.details?.diff) parts.push(r.details.diff);
-				if (parts.length === 0) return new Text(titleLine(label, detail, t, err), 0, 0);
-				const lines = [titleLine(label, detail, t, err), ...parts.map((p: string) => addBorder(p, t, err))].join("\n");
+				if (parts.length === 0) return new Text(titleLine(label, detail, t, color), 0, 0);
+				const lines = [titleLine(label, detail, t, color), ...parts.map((p: string) => addBorder(p, t))].join("\n");
 				return new Text(lines, 0, 0);
 			},
 		});
