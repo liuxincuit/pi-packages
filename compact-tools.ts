@@ -4,9 +4,12 @@ import { createBashTool, createEditTool, createReadTool, createWriteTool } from 
 const BORDER = "\u2502 "; // │
 
 function titleLine(label: string, detail: string, t: any, color: string): string {
-	const border = t.fg(color, BORDER);
+	const border = t.fg(color, t.bold(BORDER));
 	if (color === "error") {
 		return border + t.fg(color, t.bold(label + " ")) + t.fg(color, detail);
+	}
+	if (color === "success") {
+		return border + t.fg(color, t.bold(label + " ")) + detail;
 	}
 	return border + t.bold(label + " ") + detail;
 }
@@ -33,10 +36,7 @@ export default function (pi: any) {
 			parameters: tool.parameters,
 			renderShell: "self",
 			execute(...args: any[]) { return tool.execute(...args); },
-			renderCall(args: any, t: any) {
-				const detail = getDetail(args || {});
-				return new Text(titleLine(label, detail, t, "accent"), 0, 0);
-			},
+			renderCall() { return new Container(); },
 			renderResult(r: any, o: any, t: any, c: any) {
 				if (o.isPartial) return new Container();
 				const err = c?.isError || r?.isError;
