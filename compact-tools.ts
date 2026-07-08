@@ -3,6 +3,12 @@ import { createBashTool, createEditTool, createReadTool, createWriteTool } from 
 
 const BORDER = "\u2502 "; // │
 
+const SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let spinIndex = 0;
+function nextSpinner(): string {
+	return SPINNER_CHARS[spinIndex++ % SPINNER_CHARS.length];
+}
+
 function titleLine(label: string, detail: string, t: any, color: string): string {
 	const border = t.fg(color, t.bold(BORDER));
 	if (color === "error") {
@@ -12,6 +18,10 @@ function titleLine(label: string, detail: string, t: any, color: string): string
 		return border + t.fg(color, t.bold(label + " ")) + detail;
 	}
 	return border + t.bold(label + " ") + detail;
+}
+
+function partialTitleLine(label: string, detail: string, t: any): string {
+	return t.fg("dim", BORDER + nextSpinner() + " " + label + " " + truncateDetail(detail));
 }
 
 function addBorder(text: string, t: any): string {
@@ -38,10 +48,18 @@ export default function (pi: any) {
 			execute(...args: any[]) { return tool.execute(...args); },
 			renderCall() { return new Container(); },
 			renderResult(r: any, o: any, t: any, c: any) {
-				if (o.isPartial) return new Container();
+				const detail = getDetail(c?.args || {});
+				// Partial (in-progress): show spinner + any streamed text
+				if (o.isPartial) {
+					const streamed = r.content?.filter((x: any) => x?.type === "text").map((x: any) => x.text).join("") || "";
+					if (!o.expanded || !streamed) {
+						return new Text(partialTitleLine(label, detail, t), 0, 0);
+					}
+					const lines = [partialTitleLine(label, detail, t), addBorder(streamed, t)];
+					return new Text(lines.join("\n"), 0, 0);
+				}
 				const err = c?.isError || r?.isError;
 				const color = err ? "error" : "success";
-				const detail = getDetail(c?.args || {});
 				if (!o.expanded) {
 					const truncated = truncateDetail(detail);
 					return new Text(titleLine(label, truncated, t, color), 0, 0);
