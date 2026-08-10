@@ -27,6 +27,14 @@ const READY_CHANNEL = "permissions:ready";
 // （D:\code\skills 无 node_modules，import("@gotgenes/...") 会解析失败）。
 const SERVICE_KEY = Symbol.for("@gotgenes/pi-permission-system:service");
 
+// 进程级已注册标记：记录已注册 link 的服务实例身份。Pi 的 jiti 为每个
+// 扩展实例（父会话 + 每个子代理）创建独立模块副本，模块变量不共享，
+// 必须用 globalThis。子代理会重新加载本扩展并执行 tryRegister，但服务
+// 是父会话发布的同一实例——身份相同直接跳过，实现全进程只注册一次。
+// reload 时 pi-permission-system 发布全新服务（新 registry），身份不同，
+// 新实例重新注册；旧注册随旧 registry 一起被丢弃，无需显式 dispose。
+const REGISTERED_KEY = Symbol.for("pi-bash-approver:registered-service");
+
 // 结构类型，避免对 @gotgenes/pi-permission-system 的类型依赖。
 type AskDetails = {
   requestId?: string;
@@ -49,39 +57,44 @@ function getPermissionsService(): PermissionsServiceLike | undefined {
 // ── Extension ────────────────────────────────────────────────────────────────
 
 export default function bashApprover(pi: ExtensionAPI) {
-  let dispose: (() => void) | undefined;
-
   /**
-   * 幂等注册：pi-permission-system 的 `permissions:ready` 在它自己的
-   * session_start 内触发，与本扩展的 session_start 先后顺序不定，
-   * 两个入口都尝试，由 dispose 守卫保证只注册一次。
+   * 幂等注册（全进程一次）：pi-permission-system 的 `permissions:ready` 在
+   * 它自己的 session_start 内触发，与本扩展的 session_start 先后顺序不定，
+   * 两个入口都尝试；REGISTERED_KEY 按服务实例身份去重，父会话注册一次，
+   * 子代理重复加载时直接跳过。
    */
   function tryRegister(): void {
-    if (dispose) return;
     const service = getPermissionsService();
     if (!service || typeof service.registerAuthorizer !== "function") return;
+    if ((globalThis as Record<symbol, unknown>)[REGISTERED_KEY] === service) {
+      return; // 本进程已注册到当前服务实例
+    }
+
+    const authorize = async (
+      details: AskDetails,
+      _query: unknown,
+      log: { review?: (event: string, payload: unknown) => void } | undefined,
+    ) => {
+      // 只接管 bash 命令的 ask；目录/路径 ask（external_directory、path
+      // 表面）defer 给用户，保持目录限制有效。
+      const surface = details?.accessIntent?.surface ?? details?.surface;
+      if (surface !== "bash") return { kind: "defer" };
+      log?.review?.("bash_approver.decision", {
+        requestId: details?.requestId ?? null,
+        command: details?.command ?? details?.value ?? null,
+        verdict: "allow",
+      });
+      return { kind: "allow" };
+    };
 
     try {
-      const authorize = async (
-        details: AskDetails,
-        _query: unknown,
-        log: { review?: (event: string, payload: unknown) => void } | undefined,
-      ) => {
-        // 只接管 bash 命令的 ask；目录/路径 ask（external_directory、path
-        // 表面）defer 给用户，保持目录限制有效。
-        const surface = details?.accessIntent?.surface ?? details?.surface;
-        if (surface !== "bash") return { kind: "defer" };
-        log?.review?.("bash_approver.decision", {
-          requestId: details?.requestId ?? null,
-          command: details?.command ?? details?.value ?? null,
-          verdict: "allow",
-        });
-        return { kind: "allow" };
-      };
-
-      dispose = service.registerAuthorizer(LINK_NAME, authorize);
+      service.registerAuthorizer(LINK_NAME, authorize);
+      (globalThis as Record<symbol, unknown>)[REGISTERED_KEY] = service;
     } catch (error) {
-      // 注册失败时可见地报出来，便于排查（不影响其他扩展）
+      // 竞态兜底：理论上被上面的身份检查挡住；其他真实错误保持可见。
+      if (error instanceof Error && error.message.includes("already registered")) {
+        return;
+      }
       console.warn(`[pi-bash-approver] registerAuthorizer failed:`, error);
     }
   }
@@ -90,7 +103,8 @@ export default function bashApprover(pi: ExtensionAPI) {
   pi.events.on(READY_CHANNEL, () => tryRegister());
 
   pi.on("session_shutdown", () => {
-    dispose?.();
-    dispose = undefined;
+    // 无需显式 dispose：注册随 pi-permission-system 的 registry 生命周期
+    // 存在，reload 重建 registry 时自然丢弃；子代理 shutdown 不得触碰
+    // 父会话的注册（REGISTERED_KEY 归父会话所有）。
   });
 }
