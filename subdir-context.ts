@@ -116,6 +116,7 @@ export default function autoloadSubdirContext(pi: ExtensionAPI) {
 					type: "text",
 					text: `\n<system-reminder>\nLoaded subdirectory context from ${agentsPath}\n\n${content}\n</system-reminder>\n`,
 				});
+				if (ctx.hasUI) ctx.ui.notify(`加载子目录上下文: ${agentsPath}`, "info");
 			} catch (error) {
 				if (ctx.hasUI) ctx.ui.notify(`Failed to load ${agentsPath}: ${String(error)}`, "warning");
 			}
