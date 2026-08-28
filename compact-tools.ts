@@ -1,7 +1,45 @@
 import { Container, Text } from "@earendil-works/pi-tui";
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const BORDER = "\u2502 "; // │
+
+const ENV_FILE = join(homedir(), ".pi", "agent", ".env");
+
+/** 解析 KEY=VALUE 格式，支持 # 注释、空行、引号；文件不存在或为空返回 {} */
+function parseEnvFile(file: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	if (!existsSync(file)) return out;
+	for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+		const t = line.trim();
+		if (!t || t.startsWith("#")) continue;
+		const eq = t.indexOf("=");
+		if (eq <= 0) continue;
+		const key = t.slice(0, eq).trim();
+		let value = t.slice(eq + 1).trim();
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			value = value.slice(1, -1);
+		}
+		out[key] = value;
+	}
+	return out;
+}
+
+/** bash 工具专属环境：移除代理变量并注入 ~/.pi/agent/.env；无 .env 时不改变 env */
+function bashEnvHook({ command, cwd, env }: { command: string; cwd: string; env: Record<string, string> }) {
+	if (!existsSync(ENV_FILE)) return { command, cwd, env };
+	const clean = { ...env };
+	for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "all_proxy"]) {
+		delete clean[key];
+	}
+	Object.assign(clean, parseEnvFile(ENV_FILE));
+	return { command, cwd, env: clean };
+}
 
 const SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 let spinIndex = 0;
@@ -98,7 +136,7 @@ export default function (pi: any) {
 	}
 
 	registerTool(createReadTool(cwd), "read", (a) => a.path || "");
-	registerTool(createBashTool(cwd), "$", (a) => {
+	registerTool(createBashTool(cwd, { spawnHook: bashEnvHook }), "$", (a) => {
 		const cmd = a.command || "";
 		return cmd;
 	});
