@@ -35,6 +35,7 @@ const ENTRY_TYPE = "pi-profile";
 const SETTINGS_FILE = "settings.json";
 const AGENTS_FILE = "AGENTS.md";
 const NO_PROFILE = "(无档案)";
+const WIDGET_KEY = "pi-profile-loaded";
 
 interface ProfileSettings {
 	packages?: string[];
@@ -298,11 +299,44 @@ function migrateExtension(ext: Extension, pi: ExtensionAPI): void {
 }
 
 interface LoadedResources {
-	extCount: number;
+	extFilePaths: string[];
 	skillPaths: string[];
 	promptPaths: string[];
 	themePaths: string[];
 	errors: string[];
+}
+
+/** 单类资源最多列出的条数，超出部分折叠为“等 N 个” */
+const MAX_LIST_ITEMS = 6;
+
+function formatResourceList(title: string, items: string[], baseDir: string): string[] {
+	if (items.length === 0) return [`  ${title}: (无)`];
+	const lines = [`  ${title} (${items.length}):`];
+	lines.push(...items.slice(0, MAX_LIST_ITEMS).map((p) => `    ${path.relative(baseDir, p) || p}`));
+	if (items.length > MAX_LIST_ITEMS) {
+		lines.push(`    … 等 ${items.length - MAX_LIST_ITEMS} 个`);
+	}
+	return lines;
+}
+
+/** 生成档案加载清单（多行），显示实际加载了哪些资源 */
+function formatLoadedSummary(name: string, baseDir: string, loaded: LoadedResources): string {
+	const agentsPath = path.join(baseDir, AGENTS_FILE);
+	let hasAgents = false;
+	try {
+		hasAgents = fs.existsSync(agentsPath) && fs.readFileSync(agentsPath, "utf-8").trim().length > 0;
+	} catch {
+		hasAgents = false;
+	}
+	const lines = [`档案 ${name} 已加载:`, `  AGENTS.md: ${hasAgents ? "已注入上下文" : "(无)"}`];
+	lines.push(...formatResourceList("扩展", loaded.extFilePaths, baseDir));
+	lines.push(...formatResourceList("技能", loaded.skillPaths, baseDir));
+	lines.push(...formatResourceList("提示词", loaded.promptPaths, baseDir));
+	lines.push(...formatResourceList("主题", loaded.themePaths, baseDir));
+	if (loaded.errors.length > 0) {
+		lines.push(`  ⚠ ${loaded.errors.length} 个加载错误，详见日志`);
+	}
+	return lines.join("\n");
 }
 
 /** 加载一个档案：解析 settings + 包 manifest → 加载扩展并迁移注册；返回可贡献的资源 */
@@ -356,7 +390,7 @@ async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext
 	}
 
 	return {
-		extCount: extFilePaths.length,
+		extFilePaths,
 		skillPaths,
 		promptPaths,
 		themePaths,
@@ -383,6 +417,10 @@ export default function modelProfiles(pi: ExtensionAPI) {
 		const name = readActiveProfile(ctx);
 		activeProfile = name;
 		contributedResources = { skillPaths: [], promptPaths: [], themePaths: [] };
+		if (ctx.hasUI) {
+			// 先清掉上一档案的常驻清单（无档案时保持干净）
+			ctx.ui.setWidget(WIDGET_KEY, undefined);
+		}
 		if (!name) return;
 
 		try {
@@ -392,11 +430,14 @@ export default function modelProfiles(pi: ExtensionAPI) {
 				promptPaths: loaded.promptPaths,
 				themePaths: loaded.themePaths,
 			};
+			const lines = formatLoadedSummary(name, profileDir(name), loaded).split("\n");
 			if (ctx.hasUI) {
-				ctx.ui.notify(
-					`档案 ${name} 已加载（${loaded.extCount} 扩展 / ${loaded.skillPaths.length} 技能 / ${loaded.promptPaths.length} 提示词 / ${loaded.themePaths.length} 主题）`,
-					"info",
-				);
+				// 不用 notify(info)：它走 showStatus，reload 成功后紧跟的
+				// "Reloaded ..." 状态消息会合并覆盖掉它；widget 常驻不会丢。
+				ctx.ui.setWidget(WIDGET_KEY, lines);
+			} else {
+				// 非 TUI 模式（rpc/print/json）setWidget 是 no-op，逐行落到 stderr
+				for (const line of lines) warn(line);
 			}
 			for (const err of loaded.errors) {
 				warn(`profile ${name}: ${err}`);
