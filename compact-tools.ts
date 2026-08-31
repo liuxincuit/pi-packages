@@ -1,5 +1,12 @@
 import { Container, Text } from "@earendil-works/pi-tui";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@earendil-works/pi-coding-agent";
+import {
+	createBashTool,
+	createEditTool,
+	createLocalBashOperations,
+	createReadTool,
+	createWriteTool,
+	type BashOperations,
+} from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -39,6 +46,37 @@ function bashEnvHook({ command, cwd, env }: { command: string; cwd: string; env:
 	}
 	Object.assign(clean, parseEnvFile(ENV_FILE));
 	return { command, cwd, env: clean };
+}
+
+/**
+ * bash 默认超时：LLM 未显式传 timeout 时按默认时长执行，防止 find 全盘搜索
+ * 之类的长驻命令无限阻塞；LLM 显式传入的 timeout 原样透传并保持 pi 原生
+ * 错误格式，只有默认注入触发的超时消息附加说明。
+ */
+export const DEFAULT_BASH_TIMEOUT_SECONDS = 120;
+
+export function createBashTimeoutOps(
+	base: BashOperations,
+	defaultTimeoutSeconds = DEFAULT_BASH_TIMEOUT_SECONDS,
+): BashOperations {
+	return {
+		exec: async (command, cwd, options) => {
+			const injected = options.timeout === undefined;
+			const timeout = injected ? defaultTimeoutSeconds : options.timeout;
+			try {
+				return await base.exec(command, cwd, { ...options, timeout });
+			} catch (err) {
+				// pi 层把 "timeout:<n>" 错误渲染为 "Command timed out after <n> seconds"，
+				// 在 <n> 后附带默认超时说明，让 LLM 区分自己设的超时和默认超时。
+				if (injected && err instanceof Error && err.message.startsWith("timeout:")) {
+					throw new Error(
+						`timeout:${defaultTimeoutSeconds} (default timeout; no explicit timeout was provided)`,
+					);
+				}
+				throw err;
+			}
+		},
+	};
 }
 
 const SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -136,10 +174,17 @@ export default function (pi: any) {
 	}
 
 	registerTool(createReadTool(cwd), "read", (a) => a.path || "");
-	registerTool(createBashTool(cwd, { spawnHook: bashEnvHook }), "$", (a) => {
-		const cmd = a.command || "";
-		return cmd;
-	});
+	registerTool(
+		createBashTool(cwd, {
+			spawnHook: bashEnvHook,
+			operations: createBashTimeoutOps(createLocalBashOperations()),
+		}),
+		"$",
+		(a) => {
+			const cmd = a.command || "";
+			return cmd;
+		},
+	);
 	registerTool(createEditTool(cwd), "edit", (a) => a.path || "");
 	registerTool(createWriteTool(cwd), "write", (a) => a.path || "");
 }
