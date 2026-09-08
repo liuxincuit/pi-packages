@@ -1,4 +1,4 @@
-import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   if (process.platform !== "win32") return;
@@ -6,25 +6,20 @@ export default function (pi: ExtensionAPI) {
   let notifyTimer: ReturnType<typeof setTimeout> | null = null;
   let agentRunning = false;
   let hasUI = false;
+  let unsubscribeInput: (() => void) | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
     hasUI = ctx.hasUI;
     if (!hasUI) return;
 
-    class WatchedEditor extends CustomEditor {
-      handleInput(data: string): void {
-        lastInputTime = Date.now();
-        if (notifyTimer) {
-          clearTimeout(notifyTimer);
-          notifyTimer = null;
-        }
-        super.handleInput(data);
+    // 监听原始终端输入，不依赖编辑器组件：不受其他扩展 setEditorComponent 覆盖影响
+    unsubscribeInput = ctx.ui.onTerminalInput(() => {
+      lastInputTime = Date.now();
+      if (notifyTimer) {
+        clearTimeout(notifyTimer);
+        notifyTimer = null;
       }
-    }
-
-    ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new WatchedEditor(tui, theme, keybindings),
-    );
+    });
   });
 
   pi.on("agent_start", async () => {
@@ -65,6 +60,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    unsubscribeInput?.();
+    unsubscribeInput = null;
     if (notifyTimer) {
       clearTimeout(notifyTimer);
       notifyTimer = null;
