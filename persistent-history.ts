@@ -24,7 +24,7 @@ export default function (pi: ExtensionAPI) {
 
     class PersistentHistoryEditor extends CustomEditor {
       constructor(tui: any, theme: any, keybindings: any) {
-        super(tui, theme, keybindings);
+        super(tui, theme, keybindings, { embedWorkingStatus: true });
         this.restoreHistory(historyDir);
       }
 
