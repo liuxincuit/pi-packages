@@ -13,6 +13,11 @@
 // /new /resume /fork 触发扩展重建时从会话条目自动恢复；卸载由重建天然完成
 // （注册进扩展对象的工具/事件/命令随旧实例丢弃）。
 //
+// 激活清单展示在对话流里（CustomEntry + registerEntryRenderer）：写入时会显示在
+// 会话末尾，随后被对话顶走；CustomEntry 不参与 LLM 上下文（sessionEntryToContext
+// Messages 只转换 message/custom_message/compaction 等类型），模型看不到清单。
+// footer 常驻 "profile: <name>" 由 setStatus 提供，不占用输入框上方空间。
+//
 // 命令：
 //   /profile          — 弹出选择器（含"无档案"选项）
 //   /profile <name>   — 切换档案（写入会话状态 + reload）
@@ -28,6 +33,7 @@ import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Extension, LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { Container, Text } from "@earendil-works/pi-tui";
 
 const PROFILES_DIR = path.join(getAgentDir(), "profiles");
 const GIT_PACKAGES_DIR = path.join(getAgentDir(), "git");
@@ -35,7 +41,7 @@ const ENTRY_TYPE = "pi-profile";
 const SETTINGS_FILE = "settings.json";
 const AGENTS_FILE = "AGENTS.md";
 const NO_PROFILE = "(无档案)";
-const WIDGET_KEY = "pi-profile-loaded";
+const STATUS_KEY = "pi-profile";
 
 interface ProfileSettings {
 	packages?: string[];
@@ -339,8 +345,8 @@ function formatLoadedSummary(name: string, baseDir: string, loaded: LoadedResour
 	return lines.join("\n");
 }
 
-/** 加载一个档案：解析 settings + 包 manifest → 加载扩展并迁移注册；返回可贡献的资源 */
-async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext): Promise<LoadedResources> {
+/** 解析档案声明的资源路径（git 包按需 clone），不加载扩展——供切换档案时预取清单 */
+async function resolveProfileResources(name: string, pi: ExtensionAPI): Promise<LoadedResources> {
 	const baseDir = profileDir(name);
 	const settings = readProfileSettings(name);
 
@@ -348,7 +354,6 @@ async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext
 	const skillPaths: string[] = [];
 	const promptPaths: string[] = [];
 	const themePaths: string[] = [];
-	const errors: string[] = [];
 
 	for (const spec of settings.packages ?? []) {
 		const pkgDir = await resolvePackage(spec, baseDir, pi);
@@ -365,12 +370,24 @@ async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext
 	promptPaths.push(...resolveRelative(baseDir, settings.prompts));
 	themePaths.push(...resolveRelative(baseDir, settings.themes));
 
-	const extFilePaths = expandExtensionPaths(extPaths);
+	return {
+		extFilePaths: expandExtensionPaths(extPaths),
+		skillPaths,
+		promptPaths,
+		themePaths,
+		errors: [],
+	};
+}
 
-	if (extFilePaths.length > 0) {
+/** 加载一个档案：解析资源 → 加载扩展并迁移注册；返回可贡献的资源 */
+async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext): Promise<LoadedResources> {
+	const loaded = await resolveProfileResources(name, pi);
+	const errors: string[] = [];
+
+	if (loaded.extFilePaths.length > 0) {
 		try {
 			const extLoader = await getLoader();
-			const result = await extLoader.loadExtensions(extFilePaths, ctx.cwd);
+			const result = await extLoader.loadExtensions(loaded.extFilePaths, ctx.cwd);
 			for (const ext of result.extensions) {
 				migrateExtension(ext, pi);
 			}
@@ -389,19 +406,24 @@ async function loadProfile(name: string, pi: ExtensionAPI, ctx: ExtensionContext
 		}
 	}
 
-	return {
-		extFilePaths,
-		skillPaths,
-		promptPaths,
-		themePaths,
-		errors,
-	};
+	return { ...loaded, errors };
 }
 
 // ---- 档案切换 ----
 
 async function applyProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, name: string | null): Promise<void> {
-	pi.appendEntry(ENTRY_TYPE, { name: name ?? "" });
+	// 切换前先解析资源清单：写进条目数据，对话流的渲染器直接使用，与加载时序无关。
+	// 这里只解析路径不加载扩展，避免向即将被 reload 丢弃的旧实例重复注册。
+	let summary: string[] | undefined;
+	if (name) {
+		try {
+			const resolved = await resolveProfileResources(name, pi);
+			summary = formatLoadedSummary(name, profileDir(name), resolved).split("\n");
+		} catch (error) {
+			warn(`profile ${name}: cannot resolve resources: ${String(error)}`);
+		}
+	}
+	pi.appendEntry(ENTRY_TYPE, { name: name ?? "", summary });
 	if (ctx.hasUI) {
 		ctx.ui.notify(`切换档案: ${name ?? "(无)"}，正在重载…`, "info");
 	}
@@ -411,6 +433,23 @@ async function applyProfile(pi: ExtensionAPI, ctx: ExtensionCommandContext, name
 // ---- 插件入口 ----
 
 export default function modelProfiles(pi: ExtensionAPI) {
+	// 激活清单作为会话条目渲染：写入后立即出现在对话流末尾，随后被对话顶走，
+	// 不会再固定在输入框上方。CustomEntry 不参与 LLM 上下文，模型看不到清单内容。
+	pi.registerEntryRenderer(ENTRY_TYPE, (entry, _options, theme) => {
+		const data = entry.data as { name?: unknown; summary?: unknown } | undefined;
+		const name = typeof data?.name === "string" ? data.name : "";
+		if (!name) return undefined;
+		const summary = Array.isArray(data?.summary)
+			? data.summary.filter((line): line is string => typeof line === "string")
+			: [];
+		const lines = summary.length > 0 ? summary : [`档案 ${name} 已加载`];
+		const container = new Container();
+		lines.forEach((line, index) => {
+			container.addChild(new Text(theme.fg(index === 0 ? "accent" : "dim", line), 1, 0));
+		});
+		return container;
+	});
+
 	// 每次会话启动（startup / reload / new / resume / fork）都从会话条目恢复档案。
 	// 旧实例的注册已随重建丢弃，这里重新加载当前档案 = 天然卸载旧的。
 	pi.on("session_start", async (_event, ctx) => {
@@ -418,8 +457,7 @@ export default function modelProfiles(pi: ExtensionAPI) {
 		activeProfile = name;
 		contributedResources = { skillPaths: [], promptPaths: [], themePaths: [] };
 		if (ctx.hasUI) {
-			// 先清掉上一档案的常驻清单（无档案时保持干净）
-			ctx.ui.setWidget(WIDGET_KEY, undefined);
+			ctx.ui.setStatus(STATUS_KEY, name ? `profile: ${name}` : undefined);
 		}
 		if (!name) return;
 
@@ -430,17 +468,17 @@ export default function modelProfiles(pi: ExtensionAPI) {
 				promptPaths: loaded.promptPaths,
 				themePaths: loaded.themePaths,
 			};
-			const lines = formatLoadedSummary(name, profileDir(name), loaded).split("\n");
-			if (ctx.hasUI) {
-				// 不用 notify(info)：它走 showStatus，reload 成功后紧跟的
-				// "Reloaded ..." 状态消息会合并覆盖掉它；widget 常驻不会丢。
-				ctx.ui.setWidget(WIDGET_KEY, lines);
-			} else {
-				// 非 TUI 模式（rpc/print/json）setWidget 是 no-op，逐行落到 stderr
-				for (const line of lines) warn(line);
+			if (!ctx.hasUI) {
+				// 非 TUI 模式（rpc/print/json）没有对话流渲染，逐行落到 stderr
+				for (const line of formatLoadedSummary(name, profileDir(name), loaded).split("\n")) {
+					warn(line);
+				}
 			}
 			for (const err of loaded.errors) {
 				warn(`profile ${name}: ${err}`);
+			}
+			if (loaded.errors.length > 0 && ctx.hasUI) {
+				ctx.ui.notify(`档案 ${name}: ${loaded.errors.length} 个加载错误，详见日志`, "warning");
 			}
 		} catch (error) {
 			warn(`profile ${name} failed to load: ${String(error)}`);
