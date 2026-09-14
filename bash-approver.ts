@@ -14,6 +14,18 @@
  *   ask 一律 defer（仍由用户裁决），目录限制不受影响。
  * - chain owner 还会把 link 在这两个表面上的 allow 降级为 defer（双保险）。
  * - 代价：sudo 等包装命令不再有人工确认，仅建议在信任 agent 的环境启用。
+ *
+ * 服务定位：pi-permission-system 的服务发布在 sessionId 键控的进程级 Map 上
+ * （service.ts 的 SESSION_SERVICES_KEY）。27.0.0 起零参 `getPermissionsService()`
+ * 被弃用，29.0.0 起 process-root 槽 `Symbol.for("...:service")` 不再写入——
+ * 读旧槽只会拿到 undefined，注册静默失效。这里用 Symbol.for 直读键控 Map，
+ * 绕开对 node_modules 的依赖（本仓库无 node_modules，
+ * import("@gotgenes/pi-permission-system") 会解析失败）；Symbol.for 是
+ * process-global，jiti 的模块隔离拦不住。
+ *
+ * 注册范围：一个进程可有多个节点（父会话 + 每个 in-process 子代理），各自持
+ * 有独立的 registry 和 authorizer chain，且只读本节点注册的 link。所以按
+ * sessionId 逐节点注册、逐节点释放，不做跨节点去重。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -21,19 +33,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const LINK_NAME = "bash-approver";
 const READY_CHANNEL = "permissions:ready";
 
-// 服务是 pi-permission-system 发布在 globalThis 上的（service.ts 的
-// SERVICE_KEY）。Symbol.for 是 process-global，jiti 的模块隔离也拦不住，
-// 与包内 getPermissionsService() 完全等价——绕开了对 node_modules 的依赖
-// （D:\code\skills 无 node_modules，import("@gotgenes/...") 会解析失败）。
-const SERVICE_KEY = Symbol.for("@gotgenes/pi-permission-system:service");
-
-// 进程级已注册标记：记录已注册 link 的服务实例身份。Pi 的 jiti 为每个
-// 扩展实例（父会话 + 每个子代理）创建独立模块副本，模块变量不共享，
-// 必须用 globalThis。子代理会重新加载本扩展并执行 tryRegister，但服务
-// 是父会话发布的同一实例——身份相同直接跳过，实现全进程只注册一次。
-// reload 时 pi-permission-system 发布全新服务（新 registry），身份不同，
-// 新实例重新注册；旧注册随旧 registry 一起被丢弃，无需显式 dispose。
-const REGISTERED_KEY = Symbol.for("pi-bash-approver:registered-service");
+// pi-permission-system service.ts 的 SESSION_SERVICES_KEY：node 自己发布服务
+// 的 Map<string, PermissionsService>。
+const SESSION_SERVICES_KEY = Symbol.for(
+  "@gotgenes/pi-permission-system:session-services",
+);
 
 // 结构类型，避免对 @gotgenes/pi-permission-system 的类型依赖。
 type AskDetails = {
@@ -44,67 +48,77 @@ type AskDetails = {
   accessIntent?: { surface?: string };
 };
 
-type PermissionsServiceLike = {
-  registerAuthorizer?: (name: string, authorize: unknown) => () => void;
+type AuthorizerLogLike = {
+  review?: (event: string, payload: unknown) => void;
 };
 
-function getPermissionsService(): PermissionsServiceLike | undefined {
-  return (globalThis as Record<symbol, unknown>)[SERVICE_KEY] as
-    | PermissionsServiceLike
-    | undefined;
+type PermissionsServiceLike = {
+  registerAuthorizer: (name: string, authorize: unknown) => () => void;
+};
+
+/**
+ * 取某个节点（sessionId）的服务；该节点未发布服务时返回 undefined。
+ */
+function getPermissionsService(
+  sessionId: string,
+): PermissionsServiceLike | undefined {
+  const services = (globalThis as Record<symbol, unknown>)[
+    SESSION_SERVICES_KEY
+  ] as Map<string, PermissionsServiceLike> | undefined;
+  if (!(services instanceof Map)) return undefined;
+  return services.get(sessionId);
 }
+
+const authorize = async (
+  details: AskDetails,
+  _query: unknown,
+  log: AuthorizerLogLike | undefined,
+) => {
+  // 只接管 bash 命令的 ask；目录/路径 ask（external_directory、path
+  // 表面）defer 给用户，保持目录限制有效。
+  const surface = details?.accessIntent?.surface ?? details?.surface;
+  if (surface !== "bash") return { kind: "defer" };
+  log?.review?.("bash_approver.decision", {
+    requestId: details?.requestId ?? null,
+    command: details?.command ?? details?.value ?? null,
+    verdict: "allow",
+  });
+  return { kind: "allow" };
+};
 
 // ── Extension ────────────────────────────────────────────────────────────────
 
 export default function bashApprover(pi: ExtensionAPI) {
-  /**
-   * 幂等注册（全进程一次）：pi-permission-system 的 `permissions:ready` 在
-   * 它自己的 session_start 内触发，与本扩展的 session_start 先后顺序不定，
-   * 两个入口都尝试；REGISTERED_KEY 按服务实例身份去重，父会话注册一次，
-   * 子代理重复加载时直接跳过。
-   */
-  function tryRegister(): void {
-    const service = getPermissionsService();
-    if (!service || typeof service.registerAuthorizer !== "function") return;
-    if ((globalThis as Record<symbol, unknown>)[REGISTERED_KEY] === service) {
-      return; // 本进程已注册到当前服务实例
-    }
+  // 本节点已注册 link 的释放句柄，按 sessionId 去重：`permissions:ready`
+  // 每个节点至少触发两次（session_start 后一次、首个 before_agent_start
+  // 一次），重复注册会撞上 registerAuthorizer 的重名抛出。
+  const disposers = new Map<string, () => void>();
 
-    const authorize = async (
-      details: AskDetails,
-      _query: unknown,
-      log: { review?: (event: string, payload: unknown) => void } | undefined,
-    ) => {
-      // 只接管 bash 命令的 ask；目录/路径 ask（external_directory、path
-      // 表面）defer 给用户，保持目录限制有效。
-      const surface = details?.accessIntent?.surface ?? details?.surface;
-      if (surface !== "bash") return { kind: "defer" };
-      log?.review?.("bash_approver.decision", {
-        requestId: details?.requestId ?? null,
-        command: details?.command ?? details?.value ?? null,
-        verdict: "allow",
-      });
-      return { kind: "allow" };
-    };
-
+  function tryRegister(sessionId: string): void {
+    if (disposers.has(sessionId)) return;
+    const service = getPermissionsService(sessionId);
+    if (!service) return;
     try {
-      service.registerAuthorizer(LINK_NAME, authorize);
-      (globalThis as Record<symbol, unknown>)[REGISTERED_KEY] = service;
+      disposers.set(
+        sessionId,
+        service.registerAuthorizer(LINK_NAME, authorize),
+      );
     } catch (error) {
-      // 竞态兜底：理论上被上面的身份检查挡住；其他真实错误保持可见。
-      if (error instanceof Error && error.message.includes("already registered")) {
-        return;
-      }
       console.warn(`[pi-bash-approver] registerAuthorizer failed:`, error);
     }
   }
 
-  pi.on("session_start", () => tryRegister());
-  pi.events.on(READY_CHANNEL, () => tryRegister());
+  // ready 事件本身就是足够的注册点：它在首个 before_agent_start 还会再触发
+  // 一次，晚于所有扩展的 session_start，因此不依赖扩展加载顺序。
+  pi.events.on(READY_CHANNEL, (event) => {
+    const sessionId = (event as { sessionId?: string | null } | undefined)
+      ?.sessionId;
+    if (typeof sessionId === "string") tryRegister(sessionId);
+  });
 
+  // session_shutdown 只释放本节点（本扩展实例）注册的 link。
   pi.on("session_shutdown", () => {
-    // 无需显式 dispose：注册随 pi-permission-system 的 registry 生命周期
-    // 存在，reload 重建 registry 时自然丢弃；子代理 shutdown 不得触碰
-    // 父会话的注册（REGISTERED_KEY 归父会话所有）。
+    for (const dispose of disposers.values()) dispose();
+    disposers.clear();
   });
 }
