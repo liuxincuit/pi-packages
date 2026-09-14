@@ -42,4 +42,5 @@ node verify.mjs
 ## 参考
 
 - pi 扩展文档：`C:/Users/liuxi/AppData/Roaming/npm/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`
-- 仓库示例：`pi/extensions/compact-tools.ts`（同名覆盖 + spawnHook + operations 默认超时）、`bash-approver.ts`（进程级符号去重、子代理幂等）
+- 仓库示例：`pi/extensions/compact-tools.ts`（同名覆盖 + spawnHook + operations 默认超时）、`bash-approver.ts`（按 sessionId 逐节点注册 authorizer link）
+- 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined
