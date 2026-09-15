@@ -373,10 +373,10 @@ function renderPartialText(
 		let spinnerAndElapsed = "";
 		if (animating && toolCallId !== undefined) {
 			const state = getOrCreateSpinnerState(toolCallId);
-			spinnerAndElapsed = t.fg("warning", SPINNER_CHARS[state.frame]) + " " + t.fg("muted", "· " + formatElapsed(Date.now() - state.start));
+			spinnerAndElapsed = t.fg("warning", SPINNER_CHARS[state.frame]) + " " + t.fg("muted", "· " + formatElapsed(Date.now() - state.start)) + " ";
 		}
 		const suffix = (parts ?? []).map((p) => " " + t.fg(p.color ?? "muted", p.text)).join("");
-		const det = detail ? " " + truncateDetail(detail) : "";
+		const det = detail ? truncateDetail(detail) : "";
 		text.setText(t.fg("dim", BORDER) + spinnerAndElapsed + t.bold(label + " ") + det + suffix);
 	};
 
@@ -416,13 +416,32 @@ export default function (pi: any) {
 			parameters: tool.parameters,
 			renderShell: "self",
 			async execute(toolCallId: string, ...args: any[]) {
+				// renderResult 只在有 result 时被调用，不主动发一次空 partial 的话，
+				// 不产生流式输出的工具（read/edit/write）执行期间整行不可见。
+				// 内置 bash 工具在自己的 execute 开头做同样的事。
+				const onUpdate = args[2];
+				if (typeof onUpdate === "function") {
+					onUpdate({ content: [], details: undefined });
+				}
 				try {
 					return await tool.execute(toolCallId, ...args);
 				} finally {
 					stopSpinner(toolCallId);
 				}
 			},
-			renderCall() { return new Container(); },
+			renderCall(a: any, t: any, c: any) {
+				// 只在参数流式期间出调用行：那时还没有 partial result，renderResult 不会被调，
+				// 否则模型产出参数时界面整段空白。执行开始或已有 result 时让 renderResult 独占，
+				// 也包括 /reload 重放历史（那时不会再发 tool_execution_start）。
+				if (c?.executionStarted || !c?.isPartial) return new Container();
+				const { detail, parts } = getDetail(a || {}, t);
+				const text = c?.lastComponent instanceof Text ? c.lastComponent : new Text("", 0, 0);
+				const suffix = (parts ?? []).map((p) => " " + t.fg(p.color ?? "muted", p.text)).join("");
+				text.setText(
+					t.fg("dim", BORDER) + t.bold(label + " ") + (detail ? truncateDetail(detail) : "") + suffix,
+				);
+				return text;
+			},
 			renderResult(r: any, o: any, t: any, c: any) {
 				const { detail, parts } = getDetail(c?.args || {}, t);
 				const err = isToolError(r, c);
