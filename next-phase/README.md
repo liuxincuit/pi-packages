@@ -39,14 +39,17 @@ node --test pi/extensions/next-phase/logic.test.mts
 
 覆盖 `logic.ts` 的三个纯函数：新分支起点、分支阶段判定、待派发交接判定。
 
-**加载验证**（用 pi 自带的 esbuild，不需要在仓库里装依赖）：
+**加载验证**（零安装：直接引用 pi 自带的 esbuild，通用流程见 `skills/pi-extension-dev/`）。在**仓库根目录**执行：
 
 ```bash
-ESB=/home/liuxin/dev/node/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/esbuild/bin/esbuild
-TMP=$(mktemp -d)
-ln -sfn "$(dirname "$ESB")/../../typebox" "$TMP/node_modules-typebox"   # 或直接 --external:typebox
-printf 'import e from "/home/liuxin/code/skills/pi/extensions/next-phase/index.ts";\nconsole.log(typeof e);\n' > "$TMP/verify.ts"
-node "$ESB" "$TMP/verify.ts" --bundle --platform=node --format=esm --external:typebox --outfile="$TMP/out.mjs"
+PI_ROOT="$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v pi)")")")")"
+mkdir -p .pi/T/ext-verify/node_modules
+ln -sfn "$PI_ROOT/node_modules/typebox" .pi/T/ext-verify/node_modules/typebox
+printf 'import ext from "../../../pi/extensions/next-phase/index.ts";\nconsole.log(typeof ext);\n' > .pi/T/ext-verify/verify.ts
+node "$PI_ROOT/node_modules/esbuild/bin/esbuild" .pi/T/ext-verify/verify.ts \
+  --bundle --platform=node --format=esm \
+  --external:@earendil-works/* --external:typebox --outfile=.pi/T/ext-verify/out.mjs
+node .pi/T/ext-verify/out.mjs   # 应输出 function
 ```
 
 **TUI 手动验证剧本**（纯逻辑测不到的部分）：
