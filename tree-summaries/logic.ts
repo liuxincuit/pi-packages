@@ -5,8 +5,8 @@
  * 这里只有 type-only import，运行时被类型剥离全部擦除。
  *
  * 一个方案 = 目录下的一个 .md 文件：
- *   <cwd>/.pi/tree-summaries/<name>.md     项目级（项目受信任时才扫描）
- *   ~/.pi/agent/tree-summaries/<name>.md   全局级
+ *   <cwd>/.pi/tree-summaries/<name>.md                 项目级（项目受信任时才扫描）
+ *   ~/.pi/agent/extensions/tree-summaries/<name>.md    全局级
  * 文件名即命令名（foo.md → /tree:foo），正文是摘要指令。
  * 同名时项目级覆盖全局级。
  *
@@ -40,7 +40,7 @@ export interface SummaryPlan {
 
 /** 项目级与全局级方案目录，相对仓库/用户主目录。 */
 export const PROJECT_DIR_SEGMENTS = [".pi", "tree-summaries"];
-export const GLOBAL_DIR_SEGMENTS = [".pi", "agent", "tree-summaries"];
+export const GLOBAL_DIR_SEGMENTS = [".pi", "agent", "extensions", "tree-summaries"];
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 

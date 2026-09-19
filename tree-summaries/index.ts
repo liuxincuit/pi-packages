@@ -2,8 +2,8 @@
  * tree-summaries — 把「总结当前对话 + 回到会话树开头」做成可配置的预设方案。
  *
  * 一个方案 = 方案目录下的一个 .md 文件，正文是摘要指令，文件名是命令名：
- *   <cwd>/.pi/tree-summaries/req.md    →  /tree:req
- *   ~/.pi/agent/tree-summaries/req.md  →  /tree:req   （同名时项目级优先）
+ *   <cwd>/.pi/tree-summaries/req.md                    →  /tree:req
+ *   ~/.pi/agent/extensions/tree-summaries/req.md       →  /tree:req   （同名时项目级优先）
  *
  * 执行链路：命令 handler → waitForIdle → navigateTree(分支第一条用户消息)
  * → 内置摘要器拿方案正文当指令生成摘要 → 摘要 entry 落在旧对话之前，成为当前 leaf。

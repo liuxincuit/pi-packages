@@ -17,7 +17,7 @@
 | 目录 | 作用域 |
 |---|---|
 | `<cwd>/.pi/tree-summaries/` | 项目级，仅项目受信任时扫描 |
-| `~/.pi/agent/tree-summaries/` | 全局 |
+| `~/.pi/agent/extensions/tree-summaries/` | 全局 |
 
 同名方案项目级优先。目录不存在就当作没有方案，不报错。
 
@@ -112,7 +112,7 @@ node .pi/T/ext-verify/out.mjs   # 应输出 function
 
 **TUI 手动验证剧本**（纯逻辑测不到的部分）：
 
-1. `mkdir -p ~/.pi/agent/tree-summaries && printf -- '---\ndescription: 测试方案\n---\n保留需求与约束。\n' > ~/.pi/agent/tree-summaries/req.md`
+1. `mkdir -p ~/.pi/agent/extensions/tree-summaries && printf -- '---\ndescription: 测试方案\n---\n保留需求与约束。\n' > ~/.pi/agent/extensions/tree-summaries/req.md`
 2. `/reload` → 输入 `/tree:` 应看到 `tree:req`，描述为 `[全局] 测试方案`
 3. 聊几轮后执行 `/tree:req` → 状态栏出现「正在按「req」总结当前对话...」，随后聊天区重置，第一条消息是一张 branch summary 卡片
 4. 卡片内容应含方案正文要求的结构；在摘要后随便说一句，`/tree` 应看到摘要卡片作为新 root 与旧对话并列

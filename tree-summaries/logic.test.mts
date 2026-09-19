@@ -169,7 +169,7 @@ test("scanPlanDirs: 目录不存在时返回空", () => {
 test("scanPlanDirs: 按文件名排序并扫描两个 scope", () => {
 	const { cwd, home, write } = makeDirs();
 	write("project/.pi/tree-summaries/zeta.md", "Z 正文");
-	write("home/.pi/agent/tree-summaries/alpha.md", "A 正文");
+	write("home/.pi/agent/extensions/tree-summaries/alpha.md", "A 正文");
 
 	const plans = scanPlanDirs(cwd, home, { includeProject: true });
 	assert.deepEqual(
@@ -196,6 +196,16 @@ test("scanPlanDirs: includeProject=false 时不读项目目录", () => {
 	write("project/.pi/tree-summaries/req.md", "项目级正文");
 
 	assert.deepEqual(scanPlanDirs(cwd, home, { includeProject: false }), []);
+});
+
+test("scanPlanDirs: 全局方案目录在 ~/.pi/agent/extensions/ 下", () => {
+	const { cwd, home, write } = makeDirs();
+	write("home/.pi/agent/extensions/tree-summaries/req.md", "全局正文");
+
+	const plans = scanPlanDirs(cwd, home, { includeProject: true });
+	assert.equal(plans.length, 1);
+	assert.equal(plans[0].body, "全局正文");
+	assert.equal(plans[0].scope, "global");
 });
 
 test("scanPlanDirs: 跳过非 .md、隐藏文件、含空格名称与空正文", () => {
