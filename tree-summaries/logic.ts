@@ -7,13 +7,16 @@
  * 一个方案 = 目录下的一个 .md 文件：
  *   <cwd>/.pi/tree-summaries/<name>.md                 项目级（项目受信任时才扫描）
  *   ~/.pi/agent/extensions/tree-summaries/<name>.md    全局级
+ *   <扩展目录>/builtin/<name>.md                       内置（随扩展走）
  * 文件名即命令名（foo.md → /tree:foo），正文是摘要指令。
- * 同名时项目级覆盖全局级。
+ * 优先级：项目级 > 全局级 > 内置。
  *
  * frontmatter（可选）：
  *   description:   补全列表里的说明
  *   argument-hint: 补全列表里的参数提示
- *   mode:          append（默认，拼在内置摘要模板之后）| replace（完全接管摘要 prompt）
+ *   kind:           summary（默认，正文交给内置摘要器）| agent（正文作为任务指令发给当前 agent）
+ *   mode:           append（默认，拼在内置摘要模板之后）| replace（完全接管摘要 prompt）；仅 summary 型有效
+ *   output-dir:     agent 型专用，产物目录（相对 cwd）。配了才扫描它找本次产出
  */
 
 import fs from "node:fs";
@@ -22,7 +25,8 @@ import path from "node:path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export type PlanMode = "append" | "replace";
-export type PlanScope = "project" | "global";
+export type PlanKind = "summary" | "agent";
+export type PlanScope = "project" | "global" | "builtin";
 
 export interface SummaryPlan {
 	/** 执行用的命令名，形如 tree:req */
@@ -31,7 +35,10 @@ export interface SummaryPlan {
 	name: string;
 	description?: string;
 	argumentHint?: string;
+	kind: PlanKind;
 	mode: PlanMode;
+	/** agent 型专用：产物目录（相对 cwd），用于找本次交接写出的文件。 */
+	outputDir?: string;
 	/** 正文：frontmatter 之后的摘要指令 */
 	body: string;
 	filePath: string;
@@ -83,7 +90,9 @@ export function parsePlanFile(raw: string, filePath: string, scope: PlanScope): 
 		name,
 		description: data.description || undefined,
 		argumentHint: data["argument-hint"] || undefined,
+		kind: data.kind === "agent" ? "agent" : "summary",
 		mode: data.mode === "replace" ? "replace" : "append",
+		outputDir: data["output-dir"] || undefined,
 		body,
 		filePath,
 		scope,
@@ -103,13 +112,20 @@ function listPlanFiles(dir: string): string[] {
 		.sort();
 }
 
-/** 扫描项目级与全局级目录。同名方案项目级优先。 */
-export function scanPlanDirs(cwd: string, homeDir: string, options: { includeProject: boolean }): SummaryPlan[] {
+/** 扫描项目级、全局级与内置目录，同名时前面的 scope 优先。 */
+export function scanPlanDirs(
+	cwd: string,
+	homeDir: string,
+	options: { includeProject: boolean; builtinDir?: string },
+): SummaryPlan[] {
 	const scopes: Array<{ dir: string; scope: PlanScope }> = [];
 	if (options.includeProject) {
 		scopes.push({ dir: path.join(cwd, ...PROJECT_DIR_SEGMENTS), scope: "project" });
 	}
 	scopes.push({ dir: path.join(homeDir, ...GLOBAL_DIR_SEGMENTS), scope: "global" });
+	if (options.builtinDir) {
+		scopes.push({ dir: options.builtinDir, scope: "builtin" });
+	}
 
 	const byName = new Map<string, SummaryPlan>();
 	for (const { dir, scope } of scopes) {
@@ -127,7 +143,7 @@ export function scanPlanDirs(cwd: string, homeDir: string, options: { includePro
 	return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** 合成最终摘要指令：方案正文 + 用户在命令后追加的文字。 */
+/** 合成最终指令：方案正文 + 用户在命令后追加的文字。 */
 export function buildInstructions(plan: SummaryPlan, args: string): string {
 	const extra = args.trim();
 	if (!extra) return plan.body;
@@ -153,4 +169,47 @@ export function firstUserMessageId(branch: readonly SessionEntry[]): string | un
 export function hasEntriesAfter(branch: readonly SessionEntry[], entryId: string): boolean {
 	const index = branch.findIndex((entry) => entry.id === entryId);
 	return index !== -1 && index < branch.length - 1;
+}
+
+/**
+ * 分支上最后一条 assistant 消息是否是用户中断（ESC）留下的。
+ *
+ * agent 型方案在 agent 干完活后才切分支；用户中途按 ESC 时不该继续往
+ * 下走，否则会在用户没要求的情况下突然跳走。
+ */
+export function lastAssistantAborted(branch: readonly SessionEntry[]): boolean {
+	for (let index = branch.length - 1; index >= 0; index--) {
+		const entry = branch[index];
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+		return (entry.message as { stopReason?: string }).stopReason === "aborted";
+	}
+	return false;
+}
+
+/** 记录目录下每个文件的修改时间；目录不存在或不可读时返回空表。 */
+export function snapshotDir(dir: string): Map<string, number> {
+	const snapshot = new Map<string, number>();
+	let names: string[];
+	try {
+		names = fs.readdirSync(dir);
+	} catch {
+		return snapshot;
+	}
+	for (const name of names) {
+		try {
+			const stat = fs.statSync(path.join(dir, name));
+			if (stat.isFile()) snapshot.set(name, stat.mtimeMs);
+		} catch {
+			// 扫描期间被删除：跳过
+		}
+	}
+	return snapshot;
+}
+
+/** 对比两次快照，返回新增或修改过的文件名，最近修改的在前。 */
+export function changedFiles(before: Map<string, number>, after: Map<string, number>): string[] {
+	return [...after.entries()]
+		.filter(([name, mtime]) => (before.get(name) ?? Number.NEGATIVE_INFINITY) < mtime)
+		.sort((a, b) => b[1] - a[1])
+		.map(([name]) => name);
 }

@@ -17,12 +17,15 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import {
 	buildInstructions,
+	changedFiles,
 	firstUserMessageId,
 	GLOBAL_DIR_SEGMENTS,
 	hasEntriesAfter,
+	lastAssistantAborted,
 	parsePlanFile,
 	PROJECT_DIR_SEGMENTS,
 	scanPlanDirs,
+	snapshotDir,
 	type SummaryPlan,
 } from "./logic.ts";
 
@@ -34,8 +37,8 @@ const entry = (value: Record<string, unknown>): SessionEntry => value as unknown
 const user = (id: string): SessionEntry =>
 	entry({ id, parentId: null, timestamp: STAMP, type: "message", message: { role: "user", content: [] } });
 
-const assistant = (id: string): SessionEntry =>
-	entry({ id, parentId: null, timestamp: STAMP, type: "message", message: { role: "assistant", content: [] } });
+const assistant = (id: string, stopReason = "stop"): SessionEntry =>
+	entry({ id, parentId: null, timestamp: STAMP, type: "message", message: { role: "assistant", content: [], stopReason } });
 
 const label = (id: string): SessionEntry =>
 	entry({ id, parentId: null, timestamp: STAMP, type: "label", targetId: "u1", label: "checkpoint" });
@@ -48,6 +51,7 @@ test("parsePlanFile: 无 frontmatter 时正文即全部内容，mode 默认 appe
 	const result = plan("总结需求和验收标准");
 	assert.equal(result?.name, "req");
 	assert.equal(result?.commandName, "tree:req");
+	assert.equal(result?.kind, "summary");
 	assert.equal(result?.mode, "append");
 	assert.equal(result?.body, "总结需求和验收标准");
 	assert.equal(result?.description, undefined);
@@ -76,6 +80,18 @@ test("parsePlanFile: 非法 mode 回落到 append", () => {
 	assert.equal(plan("---\nmode: 随便写\n---\n正文")?.mode, "append");
 });
 
+test("parsePlanFile: kind=agent 与 output-dir", () => {
+	const result = plan(["---", "kind: agent", "output-dir: .pi/handoffs", "---", "写交接文档"].join("\n"));
+	assert.equal(result?.kind, "agent");
+	assert.equal(result?.outputDir, ".pi/handoffs");
+});
+
+test("parsePlanFile: 非法 kind 回落到 summary，未配 output-dir 时为 undefined", () => {
+	const result = plan("---\nkind: 随便写\n---\n正文");
+	assert.equal(result?.kind, "summary");
+	assert.equal(result?.outputDir, undefined);
+});
+
 test("parsePlanFile: 空正文返回 null", () => {
 	assert.equal(plan("---\ndescription: 只有 frontmatter\n---\n"), null);
 	assert.equal(plan("   \n"), null);
@@ -100,6 +116,7 @@ test("parsePlanFile: frontmatter 里的引号被剥掉", () => {
 const makePlan = (body: string, mode: SummaryPlan["mode"] = "append"): SummaryPlan => ({
 	commandName: "tree:x",
 	name: "x",
+	kind: "summary",
 	mode,
 	body,
 	filePath: "/tmp/tree-summaries/x.md",
@@ -141,6 +158,58 @@ test("hasEntriesAfter: 目标就是最后一条（刚发完第一条消息）", 
 
 test("hasEntriesAfter: 目标不在分支上", () => {
 	assert.equal(hasEntriesAfter([user("u1")], "nope"), false);
+});
+
+// ---- lastAssistantAborted ----
+
+test("lastAssistantAborted: 最后一条 assistant 被中断", () => {
+	assert.equal(lastAssistantAborted([user("u1"), assistant("a1", "aborted")]), true);
+});
+
+test("lastAssistantAborted: 取最后一条 assistant，忽略其后的用户消息", () => {
+	const branch = [assistant("a1", "aborted"), assistant("a2", "stop"), user("u2")];
+	assert.equal(lastAssistantAborted(branch), false);
+});
+
+test("lastAssistantAborted: 没有 assistant 消息时不算中断", () => {
+	assert.equal(lastAssistantAborted([user("u1")]), false);
+	assert.equal(lastAssistantAborted([]), false);
+});
+
+// ---- snapshotDir / changedFiles ----
+
+test("snapshotDir: 目录不存在时返回空表", () => {
+	const { cwd } = makeDirs();
+	assert.equal(snapshotDir(path.join(cwd, "nope")).size, 0);
+});
+
+test("snapshotDir: 只记录文件，忽略子目录", () => {
+	const { cwd, write } = makeDirs();
+	write("project/notes/a.md", "A");
+	fs.mkdirSync(path.join(cwd, "notes", "sub"), { recursive: true });
+
+	const snapshot = snapshotDir(path.join(cwd, "notes"));
+	assert.deepEqual([...snapshot.keys()], ["a.md"]);
+	assert.equal(typeof snapshot.get("a.md"), "number");
+});
+
+test("changedFiles: 只返回新增或被修改的文件，最近的在前", () => {
+	const before = new Map([
+		["old.md", 100],
+		["touched.md", 100],
+	]);
+	const after = new Map([
+		["old.md", 100],
+		["touched.md", 300],
+		["new.md", 200],
+	]);
+
+	assert.deepEqual(changedFiles(before, after), ["touched.md", "new.md"]);
+});
+
+test("changedFiles: 什么都没变时返回空", () => {
+	const snapshot = new Map([["a.md", 100]]);
+	assert.deepEqual(changedFiles(snapshot, snapshot), []);
 });
 
 // ---- scanPlanDirs ----
@@ -206,6 +275,37 @@ test("scanPlanDirs: 全局方案目录在 ~/.pi/agent/extensions/ 下", () => {
 	assert.equal(plans.length, 1);
 	assert.equal(plans[0].body, "全局正文");
 	assert.equal(plans[0].scope, "global");
+});
+
+test("scanPlanDirs: 内置方案优先级最低，依次被全局、项目覆盖", () => {
+	const { cwd, home, write } = makeDirs();
+	const builtinDir = path.join(path.dirname(cwd), "builtin");
+	write("builtin/req.md", "内置正文");
+	write("builtin/handoff.md", "内置 handoff 正文");
+
+	let plans = scanPlanDirs(cwd, home, { includeProject: true, builtinDir });
+	assert.deepEqual(
+		plans.map((plan) => plan.name),
+		["handoff", "req"],
+	);
+	assert.equal(plans.find((plan) => plan.name === "req")?.scope, "builtin");
+
+	write("home/.pi/agent/extensions/tree-summaries/req.md", "全局正文");
+	plans = scanPlanDirs(cwd, home, { includeProject: true, builtinDir });
+	assert.equal(plans.find((plan) => plan.name === "req")?.body, "全局正文");
+	assert.equal(plans.find((plan) => plan.name === "req")?.scope, "global");
+
+	write("project/.pi/tree-summaries/req.md", "项目级正文");
+	plans = scanPlanDirs(cwd, home, { includeProject: true, builtinDir });
+	assert.equal(plans.find((plan) => plan.name === "req")?.body, "项目级正文");
+	assert.equal(plans.find((plan) => plan.name === "req")?.scope, "project");
+});
+
+test("scanPlanDirs: 不传 builtinDir 时不读内置目录", () => {
+	const { cwd, home, write } = makeDirs();
+	write("builtin/req.md", "内置正文");
+
+	assert.deepEqual(scanPlanDirs(cwd, home, { includeProject: true }), []);
 });
 
 test("scanPlanDirs: 跳过非 .md、隐藏文件、含空格名称与空正文", () => {
