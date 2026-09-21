@@ -52,6 +52,8 @@ interface Answer {
 	label: string;
 	wasCustom: boolean;
 	optionIndex?: number;
+	/** 用 n 给该选项补的说明；Type something. 那种自由输入不带 note。 */
+	note?: string;
 }
 
 interface AskUserQuestionDetails {
@@ -156,7 +158,7 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 		name: "ask_user_question",
 		label: "Ask User Question",
 		description:
-			"Ask the user one or more multiple-choice questions and get the answers back as structured data. Use it when the answer changes what you would do and the repository cannot tell you. Each question shows its options, with descriptions where they help, and offers a 'Type something.' row for an answer in the user's own words.",
+			"Ask the user one or more multiple-choice questions and get the answers back as structured data. Use it when the answer changes what you would do and the repository cannot tell you. Each question shows its options, with descriptions where they help, and offers a 'Type something.' row for an answer in the user's own words. The user may also attach a note to the option they pick; it comes back appended as a '— note: ...' suffix.",
 		promptSnippet: "Ask the user structured questions and get their choices back",
 		promptGuidelines: [
 			"Use ask_user_question when the answer changes what you do; state your assumption and continue when it does not.",
@@ -197,9 +199,11 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			const questionnaire = ctx.ui.custom<AskUserQuestionDetails>((tui, theme, _kb, done) => {
 				let currentTab = 0;
 				let optionIndex = 0;
-				let inputMode = false;
+				let inputMode: "answer" | "note" | false = false;
 				let cachedLines: string[] | undefined;
 				const answers = new Map<number, Answer>();
+				/** 用户按 n 给选项补的说明：问题 tab → 选项下标 → 文本。 */
+				const notes = new Map<number, Map<number, string>>();
 
 				const editorTheme: EditorTheme = {
 					borderColor: (s) => theme.fg("accent", s),
@@ -224,6 +228,20 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 
 				function allAnswered() {
 					return answers.size === questions.length;
+				}
+
+				function optionNote(index: number): string | undefined {
+					return notes.get(currentTab)?.get(index);
+				}
+
+				function setOptionNote(index: number, text: string): void {
+					let perQuestion = notes.get(currentTab);
+					if (!perQuestion) {
+						perQuestion = new Map();
+						notes.set(currentTab, perQuestion);
+					}
+					if (text) perQuestion.set(index, text);
+					else perQuestion.delete(index);
 				}
 
 				function currentQuestion(): Question | undefined {
@@ -251,8 +269,14 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 				editor.onSubmit = (value) => {
 					if (!inputMode) return;
 					const trimmed = value.trim();
+					const mode = inputMode;
 					inputMode = false;
 					editor.setText("");
+					if (mode === "note") {
+						setOptionNote(optionIndex, trimmed);
+						refresh();
+						return;
+					}
 					if (!trimmed) {
 						refresh();
 						return;
@@ -316,21 +340,33 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 						return;
 					}
 
+					if (matchesKey(data, "n")) {
+						const option = options[optionIndex];
+						// Type something. 那行本身就是输入，不给它挂 note
+						if (!option || option.isOther) return;
+						inputMode = "note";
+						editor.setText(optionNote(optionIndex) ?? "");
+						refresh();
+						return;
+					}
+
 					if (matchesKey(data, Key.enter)) {
 						const option = options[optionIndex];
 						if (!option) return;
 						if (option.isOther) {
-							inputMode = true;
+							inputMode = "answer";
 							editor.setText("");
 							refresh();
 							return;
 						}
+						const note = optionNote(optionIndex);
 						answers.set(currentTab, {
 							questionIndex: currentTab,
 							value: option.label,
 							label: option.label,
 							wasCustom: false,
 							optionIndex: optionIndex + 1,
+							...(note ? { note } : {}),
 						});
 						advance();
 						return;
@@ -399,6 +435,9 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 								" ",
 								theme.fg("muted", `${questions[i].label}: `) + theme.fg("text", chosen + answer.label),
 							);
+							if (answer.note) {
+								addWrappedWithPrefix("     ", theme.fg("dim", `note: ${answer.note}`));
+							}
 						}
 						lines.push("");
 						if (allAnswered()) {
@@ -421,17 +460,26 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 							const option = options[i];
 							const selected = i === optionIndex;
 							const isOther = option.isOther === true;
+							const note = isOther ? undefined : optionNote(i);
+							const editing = (isOther && inputMode === "answer") || (selected && inputMode === "note");
 							const prefix = selected ? theme.fg("accent", "> ") : "  ";
-							const label = `${i + 1}. ${option.label}${isOther && inputMode ? " ✎" : ""}`;
-							const color = selected || (isOther && inputMode) ? "accent" : "text";
+							const label = `${i + 1}. ${option.label}${editing || note ? " ✎" : ""}`;
+							const color = selected || editing ? "accent" : "text";
 							addWrappedWithPrefix(prefix, theme.fg(color, label));
 							if (option.description) {
 								addWrappedWithPrefix("     ", theme.fg("muted", option.description));
 							}
+							if (note) {
+								addWrappedWithPrefix("     ", theme.fg("dim", `note: ${note}`));
+							}
 						}
 						if (inputMode) {
 							lines.push("");
-							addWrappedWithPrefix(" ", theme.fg("muted", "Your answer:"));
+							const prompt =
+								inputMode === "note"
+									? `Note for ${optionIndex + 1}. ${options[optionIndex]?.label ?? ""}:`
+									: "Your answer:";
+							addWrappedWithPrefix(" ", theme.fg("muted", prompt));
 							for (const line of editor.render(Math.max(1, renderWidth - 2))) {
 								lines.push(` ${line}`);
 							}
@@ -439,12 +487,14 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 					}
 
 					lines.push("");
-					if (inputMode) {
+					if (inputMode === "note") {
+						addWrappedWithPrefix(" ", theme.fg("dim", "Enter to save the note • Esc to discard • clear it to remove"));
+					} else if (inputMode === "answer") {
 						addWrappedWithPrefix(" ", theme.fg("dim", "Enter to submit • Esc to go back"));
 					} else {
 						const help = isMulti
-							? "Tab/←→ switch • ↑↓ move • Enter confirm • Esc cancel"
-							: "↑↓ move • Enter select • Esc cancel";
+							? "Tab/←→ switch • ↑↓ move • n note • Enter confirm • Esc cancel"
+							: "↑↓ move • n note • Enter select • Esc cancel";
 						addWrappedWithPrefix(" ", theme.fg("dim", help));
 					}
 					lines.push(theme.fg("accent", "─".repeat(renderWidth)));
@@ -465,11 +515,13 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			watchPendingAnswer(pi, ctx, questions.length, questionnaire);
 			const result = await questionnaire;
 
-			const lines = result.answers.map((answer) => {
+			const orderedAnswers = [...result.answers].sort((a, b) => a.questionIndex - b.questionIndex);
+			const lines = orderedAnswers.map((answer) => {
 				const label = questions[answer.questionIndex].label;
-				return answer.wasCustom
+				const chosen = answer.wasCustom
 					? `${label}: user wrote: ${answer.label}`
 					: `${label}: ${answer.optionIndex}. ${answer.label}`;
+				return answer.note ? `${chosen} — note: ${answer.note}` : chosen;
 			});
 			if (result.cancelled) {
 				lines.push(lines.length > 0 ? "User cancelled before answering the rest." : "User cancelled the questionnaire.");
@@ -477,7 +529,7 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],
-				details: { questions, answers: result.answers, cancelled: result.cancelled },
+				details: { questions, answers: orderedAnswers, cancelled: result.cancelled },
 			};
 		},
 
@@ -506,12 +558,14 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 				return new Text(first?.type === "text" ? theme.fg("warning", first.text) : "", 0, 0);
 			}
 
-			const lines = details.answers.map((answer) => {
+			const orderedAnswers = [...details.answers].sort((a, b) => a.questionIndex - b.questionIndex);
+			const lines = orderedAnswers.map((answer) => {
 				const label = details.questions[answer.questionIndex]?.label ?? `Q${answer.questionIndex + 1}`;
 				const chosen = answer.wasCustom
 					? `${theme.fg("muted", "(wrote) ")}${answer.label}`
 					: `${answer.optionIndex}. ${answer.label}`;
-				return `${theme.fg("success", "✓ ")}${theme.fg("accent", label)}: ${chosen}`;
+				const note = answer.note ? theme.fg("dim", ` ✎ ${answer.note}`) : "";
+				return `${theme.fg("success", "✓ ")}${theme.fg("accent", label)}: ${chosen}${note}`;
 			});
 			if (details.cancelled) {
 				lines.push(theme.fg("warning", details.answers.length > 0 ? "Cancelled before finishing" : "Cancelled"));
