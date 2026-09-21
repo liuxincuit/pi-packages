@@ -10,12 +10,13 @@
 - 多问题时提供 tab 切换与 Submit 复核页
 - 通过 `promptSnippet` / `promptGuidelines` 注入系统提示，引导模型只在"答案会改变行为"时才发问，且尽量合并成一次调用
 - `executionMode: "sequential"`：等待 UI 时不允许其他工具调用并发
+- **用户离屏时弹窗提醒**：提问后 10 秒内用户一次按键都没有，就弹一个置顶 MessageBox 把人叫回来（仅 Windows）。用户在场（有按键）或已经答完/取消时不弹
 
 交互骨架取自 pi 示例 `examples/extensions/questionnaire.ts`。
 
 ## 配置
 
-无。参数完全由模型在调用时给出。
+无。参数完全由模型在调用时给出。弹窗延时是源码里的 `NOTIFY_DELAY_MS`（默认 10000ms）。
 
 ## 调试
 
@@ -24,6 +25,13 @@
 - 单问题：选项 + `Type something.`，回车提交
 - 多问题：左右方向键切 tab，最后一页 Submit 复核
 - 取消（Esc）返回 `cancelled: true`，不写答案
+
+弹窗提醒（只能靠 TUI 手动剧本验证，且仅 Windows）：
+
+1. 让模型调用 `ask_user_question`
+2. 界面出现后什么都不按，等 10 秒 → 应弹出置顶窗"pi 正在向你提问"
+3. 重来一次，在 10 秒内随便敲一个键 → 不应弹窗
+4. 重来一次，10 秒内按 Esc（或直接答完）→ 不应弹窗
 
 ## 陷阱
 
@@ -36,3 +44,13 @@
 **问题用数组下标定位，不用 id。** 模型给出重复 id 是一类白送的 bug，下标让答案与问题天然对齐。
 
 **参数校验**：某题既无选项又 `allowOther: false` 时无法作答，工具直接返回错误文本而不是渲染空界面。
+
+**弹窗提醒只在 Windows 上做**（`process.platform !== "win32"` 直接返回）。其他平台工具照常可用，只是没提醒。
+
+**弹窗用 user32 的 `MessageBox`，不是 WinForms 的 `MessageBox.Show`。** WinForms 的 `MessageBoxOptions` 枚举里没有 `TopMost`，而把 `0x40000` 强转成它会被 PowerShell 拒收（「无法将值 262144 转换为类型 MessageBoxOptions」，它校验整数必须是已定义的枚举值）。`0x50040` = `MB_TOPMOST | MB_SETFOREGROUND | MB_ICONINFORMATION`，模型往往是在别的窗口全屏时才需要这个提醒，不置顶等于没弹。
+
+**弹窗必须 fire-and-forget。** `MessageBox` 会阻塞它自己的 powershell 进程直到用户点确定；`await pi.exec(...)` 会把提问界面一起卡住，人根本没法答题。
+
+**文案走 base64。** 直接拼进 `-Command` 会被引号或换行截断（内容最终来自模型）。
+
+**定时器和输入监听必须在 UI settle 时撤销**，否则用户已经答完还会收到弹窗，监听器也会在会话里越积越多。`watchPendingAnswer` 里靠 `pending.then(cancel, cancel)` 做到：`finally(cancel)` 会造出一个没人接的 promise，UI 抛错时那个 rejection 会变成 unhandledRejection。

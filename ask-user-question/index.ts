@@ -19,7 +19,7 @@
  * - `executionMode: "sequential"`：等 UI 时不能与其他工具调用并发。
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	Editor,
 	type EditorTheme,
@@ -86,6 +86,71 @@ function errorResult(message: string): { content: { type: "text"; text: string }
 	return { content: [{ type: "text", text: message }], details: { questions: [], answers: [], cancelled: true } };
 }
 
+/** 弹窗前的等待时长：这期间用户哪怕只按了一下键，就认为人在终端前，不打扰。 */
+const NOTIFY_DELAY_MS = 10_000;
+
+/**
+ * 弹一个置顶 MessageBox，把用户叫回来答题。
+ *
+ * fire-and-forget：MessageBox 会阻塞它自己的 powershell 进程直到用户点确定，await 会把提问
+ * 界面一起卡住。
+ *
+ * 走 user32 的 MessageBox，不是 WinForms 的：WinForms 的 MessageBoxOptions 里没有 TopMost，
+ * 而强行传 0x40000 会被 PowerShell 拒收——它校验整数必须是已定义的枚举成员。0x50040 即
+ * MB_TOPMOST | MB_SETFOREGROUND | MB_ICONINFORMATION，窗口才不会被别的程序盖住。
+ *
+ * 文案走 base64：问题内容最终来自模型，直接拼进 -Command 会被引号或换行截断。
+ */
+function notifyAsking(pi: ExtensionAPI, questionCount: number): void {
+	if (process.platform !== "win32") return;
+	const text = questionCount > 1 ? `pi 正在向你提问（${questionCount} 个问题）` : "pi 正在向你提问";
+	const payload = Buffer.from(text, "utf8").toString("base64");
+	void pi
+		.exec("powershell", [
+			"-NoProfile",
+			"-Command",
+			"Add-Type -Namespace P -Name U -MemberDefinition " +
+				"'[System.Runtime.InteropServices.DllImport(\"user32.dll\", " +
+				"CharSet=System.Runtime.InteropServices.CharSet.Unicode)] " +
+				"public static extern int MessageBox(System.IntPtr hWnd, string text, string caption, uint type);'; " +
+				`$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')); ` +
+				"[P.U]::MessageBox([System.IntPtr]::Zero, $t, 'pi', 0x50040)",
+		])
+		.catch(() => {});
+}
+
+/**
+ * 用户十秒没动静（一次按键都没有）就弹提醒，UI 一 settle 立刻撤销。
+ *
+ * 为什么需要：agent 在等这份 UI 时既不产出消息、也不会触发 agent_end，notify-on-reply 那条
+ * 路径全程不亮，用户离开终端就不知道模型在等一个回答。
+ *
+ * 输入监听走 ctx.ui.onTerminalInput 而不是编辑器组件：提问界面是 ctx.ui.custom 的组件，拿不到
+ * 编辑器；onTerminalInput 是 TUI 层面的输入钩子，custom 界面里的按键照样触发。
+ */
+function watchPendingAnswer(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	questionCount: number,
+	pending: Promise<unknown>,
+): void {
+	let settled = false;
+	let userTyped = false;
+	const unsubscribeInput = ctx.ui.onTerminalInput(() => {
+		userTyped = true;
+	});
+	const notifyTimer = setTimeout(() => {
+		if (settled || userTyped) return;
+		notifyAsking(pi, questionCount);
+	}, NOTIFY_DELAY_MS);
+	const cancel = () => {
+		settled = true;
+		clearTimeout(notifyTimer);
+		unsubscribeInput();
+	};
+	pending.then(cancel, cancel);
+}
+
 export default function askUserQuestion(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "ask_user_question",
@@ -129,7 +194,7 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 			const submitTab = questions.length;
 			const totalTabs = questions.length + 1;
 
-			const result = await ctx.ui.custom<AskUserQuestionDetails>((tui, theme, _kb, done) => {
+			const questionnaire = ctx.ui.custom<AskUserQuestionDetails>((tui, theme, _kb, done) => {
 				let currentTab = 0;
 				let optionIndex = 0;
 				let inputMode = false;
@@ -396,6 +461,9 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 					handleInput,
 				};
 			});
+
+			watchPendingAnswer(pi, ctx, questions.length, questionnaire);
+			const result = await questionnaire;
 
 			const lines = result.answers.map((answer) => {
 				const label = questions[answer.questionIndex].label;
