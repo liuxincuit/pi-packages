@@ -35,7 +35,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 **零安装路线**：pi 自带的 `node_modules` 里已经有 esbuild / typebox / jiti，直接引用，不必再建临时目录 `npm i`。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
 
 ```bash
-PI_ROOT="$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v pi)")")")")"   # pi 包根目录
+PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"   # pi 包根目录
 
 mkdir -p .pi/T/ext-verify/node_modules
 ln -sfn "$PI_ROOT/node_modules/typebox" .pi/T/ext-verify/node_modules/typebox
@@ -48,7 +48,24 @@ node "$PI_ROOT/node_modules/esbuild/bin/esbuild" .pi/T/ext-verify/verify.ts \
 node .pi/T/ext-verify/out.mjs
 ```
 
-`--external:typebox` 让打包跳过它，运行时由 verify 目录下的软链提供；`@earendil-works/*` 通常只剩 type-only import，会被类型剥离直接擦除。
+`--external:typebox` 让打包跳过它，运行时由 verify 目录下的软链提供。
+
+**这个命令只对「import 全是 type-only」的扩展够用。** 如果扩展 import 了 pi-tui 的运行时值（`Editor`、`Key`、`matchesKey`、`Text`、`visibleWidth`、`wrapTextWithAnsi` 等），`--external:@earendil-works/*` 会让产物在 `node out.mjs` 时报 `Cannot find package '@earendil-works/pi-tui'`；把 pi-tui 也软链进去后，它的传递依赖（`marked`、`get-east-asian-width`…）会一个接一个地报，逐个软链是无底洞。此时改用 esbuild 的 JS API，一次把 `nodePaths` 带上：
+
+```js
+// .pi/T/ext-verify/build.cjs —— 用法：PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node build.cjs <entry.mjs> <out.mjs>
+const PI_ROOT = process.env.PI_ROOT;
+const esbuild = require(`${PI_ROOT}/node_modules/esbuild`);
+const [entry, outfile] = process.argv.slice(2);
+esbuild.buildSync({
+	entryPoints: [entry], bundle: true, platform: "node", format: "esm",
+	nodePaths: [`${PI_ROOT}/node_modules`],          // pi-tui 及其整条依赖都在 pi 自己的 node_modules 里
+	external: ["@earendil-works/pi-coding-agent"],   // 只留这一个：对它的 import 通常都是 type-only
+	outfile,
+});
+```
+
+`--node-paths` 是 JS API 专有选项，CLI 上不存在（写了只会报 `Invalid build flag`）。
 
 还要验证 **jiti 的真实加载路径**（入口里的 `import "./logic.js"` 指向 `logic.ts` 这类解析只有 jiti 认）：
 
@@ -56,7 +73,10 @@ node .pi/T/ext-verify/out.mjs
 // .pi/T/ext-verify/jiticheck.cjs，用 `PI_ROOT="$PI_ROOT" node .pi/T/ext-verify/jiticheck.cjs` 跑
 const { createJiti } = require(`${process.env.PI_ROOT}/node_modules/jiti/lib/jiti.cjs`);
 const jiti = createJiti(__filename, {
-	alias: { typebox: `${process.env.PI_ROOT}/node_modules/typebox/build/index.mjs` },
+	alias: {  // 扩展 import 的运行时包都得指到 pi 自己的 node_modules，否则 jiti 从扩展文件位置向上找不到
+		typebox: `${process.env.PI_ROOT}/node_modules/typebox/build/index.mjs`,
+		"@earendil-works/pi-tui": `${process.env.PI_ROOT}/node_modules/@earendil-works/pi-tui/dist/index.js`,
+	},
 });
 console.log(typeof jiti(`${__dirname}/../../../pi/extensions/<name>/index.ts`).default);
 ```
@@ -69,6 +89,37 @@ node --test pi/extensions/<name>/*.test.mts
 
 Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀避开 `MODULE_TYPELESS_PACKAGE_JSON` 警告，**不要**为此给 `package.json` 加 `"type": "module"`。
 
+**行为验证（需要 UI 的扩展）**：把入口换成 `.mjs`，mock 掉 pi 与 ctx，就能不进 TUI 跑 `execute`：
+
+```js
+// .pi/T/ext-verify/behavior.mjs —— 用上面的 build.cjs 打成单文件再 node 跑
+import ext from "../../../pi/extensions/<name>/index.ts";
+let tool;
+const execCalls = [];
+const pi = {
+	registerTool: (d) => { tool = d; },
+	exec: async (cmd, args) => { execCalls.push(args.join(" ")); return { stdout: "", stderr: "", code: 0, killed: false }; },
+};
+let inputHandlers = [];
+let resolvePending;
+const ctx = {
+	mode: "tui",
+	ui: {
+		onTerminalInput: (h) => { inputHandlers.push(h); return () => {}; },
+		custom: () => new Promise((r) => { resolvePending = r; }),   // 受控 promise：自己决定 UI 何时结束
+	},
+};
+ext(pi);                                                        // 拿到 registerTool 收到的定义，才能调 execute
+const run = tool.execute("id", params, undefined, undefined, ctx);
+await new Promise((r) => setTimeout(r, 11_000));                  // 等过真实的延时窗口
+inputHandlers[0]?.("x");                                         // 模拟一次按键，验证取消分支
+resolvePending({ questions: [], answers: [], cancelled: true });
+await run;
+console.log(execCalls.length, execCalls[0]);
+```
+
+`ctx.ui.custom(factory)` 里不必建组件，只返回一个自己控制的 promise —— 这样能验证延时、取消、监听器注销这些时序逻辑（组件渲染另说）。延时是源码里的常量时只能等真实时长，一条 30 秒的脚本换来确定性，比塞进 TUI 里手测划算。`exec` 的 mock 同时留下了真实命令字符串，可以再拿去 `spawnSync` 加 `timeout` 真跑一次，验证命令行拼装（引号、转义、枚举值）。
+
 真实验证：改完扩展后 /reload，实际调用工具观察（如不传 timeout 跑 sleep 验证默认超时生效，错误消息会带说明）。
 
 ## 常见错误
@@ -77,6 +128,8 @@ Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀�
 |---|---|
 | 调用 bash 工具时传 `timeout: 150` 想限制 harness 调用 → 变成工具显式超时，命令按 150s 执行 | timeout 是工具参数；不传才走扩展默认值 |
 | 临时目录被 pi-permission-system 拦截 | 拦截原因是**路径在工作目录外**，不是命令模式。把临时目录建在工作目录内（如 `.pi/T/`），或先向用户说明；不要换命令绕过 |
+| 用 `readlink -f "$(command -v pi)"` 推导 PI_ROOT → 得到 `~/AppData` | npm 的 `pi.cmd` 包装没指向包目录，改用 `PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"` |
+| 扩展 import 了 pi-tui 运行时值，`--external:@earendil-works/*` 打包后 `node out.mjs` 报缺 pi-tui | 换 esbuild JS API + `nodePaths`，见「验证」 |
 | 改完扩展不 /reload 就测试 | 不 reload 不生效 |
 | 在 spawnHook 里试图改 timeout | spawnHook 只能改 command/cwd/env，用 operations 包装 |
 | 在 pi 的 `dist/` 上 `grep -r` 找源码 → 命中 `dist/bundle/chunks/*.js`（esbuild 压缩产物，单行最大 3.9MB），一次喷出 50KB+ 输出 | 加 `--exclude-dir=bundle`——`dist/core/`、`dist/modes/` 下是格式化分文件，可正常 grep/sed；已命中 bundle 时用 `grep -oE ".{0,300}"` 限宽 |
@@ -87,6 +140,6 @@ Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀�
 
 ## 参考
 
-- pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`dirname $(dirname $(dirname $(readlink -f $(command -v pi))))`）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
+- pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`"$(npm root -g)/@earendil-works/pi-coding-agent"`；用 `readlink -f $(command -v pi)` 推导会得到 `~/AppData`，因为 npm 装的是 `.cmd` 包装）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
 - 仓库示例：`pi/extensions/compact-tools/index.ts`（同名覆盖 + spawnHook + operations 默认超时）、`pi/extensions/bash-approver/index.ts`（按 sessionId 逐节点注册 authorizer link）、`pi/extensions/next-phase/`（会话控制 + 工具默认禁用 + 单测）
 - 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined
