@@ -24,6 +24,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 - **会话控制方法只挂在命令上下文上**：`waitForIdle` / `navigateTree` / `newSession` / `fork` / `switchSession` 属于 `ExtensionCommandContext`。工具 `execute` 的 `ctx` 是 `ExtensionContext`，事件处理器、快捷键拿到的也是它——**工具不可能自己切会话**。
 - **工具里派发命令是「立即执行」**：`pi.sendUserMessage("/cmd", { expandPromptTemplates: true })` 会在**当前工具调用内部**同步跑命令处理器（`expandPromptTemplates` 默认 false，不传根本不派发命令）。此时 agent 正在 streaming：`navigateTree` 直接抛 `Wait for the current response to finish before navigating the session tree.`，命令里的 `waitForIdle()` 会死锁。
 - **安全派发点是 `agent_settled`**：那时 `ctx.isIdle()` 已为 true（pi 先置 `_isAgentRunActive = false` 再发事件），`waitForIdle()` 立即返回、`navigateTree` 可用。推荐链路：工具落盘一个「待执行」entry → `agent_settled` 里 `pi.sendUserMessage("/内部命令", { expandPromptTemplates: true })` → 命令里切分支 + 注入 prompt。工具返回 `terminate: true` 可跳过本轮多余的 LLM 调用（取消路径别加，否则模型没机会继续干活）。
+- **`agent_settled` handler 里发的消息会延迟执行**：`_emitAgentSettled` 先置 `_isEmittingAgentSettled = true`，跑完全部 settled handler 后才关闭它，然后逐个执行期间入队的 `prompt` / `sendUserMessage`，最后才 resolve 等待 idle 的 promise。两个可依赖的后果：settled handler 里发消息不会重入 `agent_start`（不必担心看到「新一轮已开始」的中间态）；`waitForIdle()` 返回时上一轮已彻底结束，所以「先 `waitForIdle()` → 注册收工回调 → 再发消息」这种顺序不会被上一轮的 `agent_settled` 抢先触发。
 - **`pi.appendEntry` 不返回 entry id**，且切分支之后写的 entry 落在**新分支**上。跨分支记账不能靠「就地更新」，要用「引用对方 id」：比如 START entry 的 data 里记 handoffId，判断是否已消费时扫全量 `getEntries()` 而不是当前分支——否则用户 `/tree` 回到旧分支会把同一件事再做一次。
 - **工具显隐是运行时状态**：`pi.setActiveTools()` 不写 session entry，`/tree` 切分支**不会**自动恢复。要按分支显示不同工具集，得在 `session_start` / `session_tree` 里自己重算（注意 `navigateTree` 之后新分支还没写标记，需要再同步一次）。
 - **扩展注册的工具会被自动激活**（reload 亦然）。「默认禁用」要在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉，且每次都跑。
@@ -80,6 +81,31 @@ const jiti = createJiti(__filename, {
 });
 console.log(typeof jiti(`${__dirname}/../../../pi/extensions/<name>/index.ts`).default);
 ```
+
+**最省事的一步是让 pi 自己加载全部扩展**——直接用 pi 的 loader 跑一遍，比逐个打包更能发现真问题（jiti 解析、import 路径失效、工厂抛错、handler 注册结果）。Windows 上绝对路径必须转成 `file://` URL，直接 `import()` 绝对路径会报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`：
+
+```js
+// .pi/T/ext-verify/load-check.mjs —— 用法：PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node .pi/T/ext-verify/load-check.mjs
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const PI_ROOT = process.env.PI_ROOT;
+const cwd = process.cwd();
+const { loadExtensions } = await import(pathToFileURL(`${PI_ROOT}/dist/core/extensions/loader.js`).href);
+
+const root = path.join(cwd, "pi", "extensions");   // 只扫一层子目录，与 pi 的发现规则一致
+const paths = fs.readdirSync(root).map((n) => path.join(root, n, "index.ts")).filter((p) => fs.existsSync(p));
+
+const result = await loadExtensions(paths, cwd);   // eventBus / runtime 可选，不传自动创建
+console.log(`加载 ${result.extensions.length}/${paths.length}`);
+for (const e of result.extensions) {
+	console.log(" OK  ", path.relative(cwd, e.path), "|", [...e.handlers.keys()].join(",") || "-");
+}
+for (const err of result.errors) console.log(" FAIL", err.path, "|", err.error);
+```
+
+它同时也是 **pi 升级后的首选回归手段**：换版本后先跑它，`errors` 为空再谈其他；输出里每个扩展注册的 handlers / tools / commands 能直接看出「注册点是否还在」。
 
 **纯逻辑单测**（拆出 `logic.ts` 之类的无依赖模块才能这么跑）：
 
