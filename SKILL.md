@@ -28,7 +28,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 - **工具显隐是运行时状态**：`pi.setActiveTools()` 不写 session entry，`/tree` 切分支**不会**自动恢复。要按分支显示不同工具集，得在 `session_start` / `session_tree` 里自己重算（注意 `navigateTree` 之后新分支还没写标记，需要再同步一次）。
 - **扩展注册的工具会被自动激活**（reload 亦然）。「默认禁用」要在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉，且每次都跑。
 
-参考实现：`pi/extensions/next-phase/`（工具 + 内部命令 + `agent_settled` 派发 + 按分支显隐的完整例子）。
+这几条组合起来即完整的「阶段交接」模式：工具落盘一个待执行 entry → `agent_settled` 里派发内部命令 → 命令里切分支 + 注入 prompt，并按分支重算工具显隐。
 
 ## 验证（仓库无 node_modules）
 
@@ -141,5 +141,5 @@ console.log(execCalls.length, execCalls[0]);
 ## 参考
 
 - pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`"$(npm root -g)/@earendil-works/pi-coding-agent"`；用 `readlink -f $(command -v pi)` 推导会得到 `~/AppData`，因为 npm 装的是 `.cmd` 包装）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
-- 仓库示例：`pi/extensions/compact-tools/index.ts`（同名覆盖 + spawnHook + operations 默认超时）、`pi/extensions/bash-approver/index.ts`（按 sessionId 逐节点注册 authorizer link）、`pi/extensions/next-phase/`（会话控制 + 工具默认禁用 + 单测）
+- 实现参考：本仓库 `pi/extensions/`（含子目录）下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
 - 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined
