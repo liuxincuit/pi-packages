@@ -75,10 +75,7 @@ export default function autoPrepend(pi: ExtensionAPI) {
       const entries = ctx.sessionManager.getBranch();
       let assistantCount = 0;
       for (const entry of entries) {
-        if (
-          entry.type === "message" &&
-          (entry as { role?: string }).role === "assistant"
-        ) {
+        if (entry.type === "message" && entry.message.role === "assistant") {
           assistantCount++;
         }
       }
