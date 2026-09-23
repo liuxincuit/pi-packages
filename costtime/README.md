@@ -6,10 +6,12 @@
 
 | 阶段 | 表现 |
 |---|---|
-| agent 运行中 | 输入框里的 working 行显示 `Working 12s`（spinner 照常转），每秒刷新 |
-| 一轮结束 | 在该轮最后一条回复下方追加一条 `Worked 75s`（灰色） |
+| agent 运行中 | 输入框里的 working 行显示 `Working 1m 12s`（spinner 照常转），每秒刷新 |
+| 一轮结束 | 在该轮最后一条回复下方追加一条 `Worked 1h 15m 3s`（灰色） |
 
 计时口径是**整个用户轮次**：`agent_start` → `agent_before_settle`，含工具执行、重试、自动继续。中途的 `agent_end` 不停表，因为之后可能还有重试或继续。
+
+耗时按 `NhNmNs` 显示（`formatDuration`，index.ts 里的具名导出），值为 0 的单位省略：`45s`、`1m 5s`、`1h 2m 3s`、`1h`。超过 24 小时不进位到天，直接 `26h 3m`。
 
 结束后写入的是 **custom entry**（`pi.appendEntry` 同类的会话条目），不参与 LLM 上下文——模型看不到这行耗时。`/resume`、`/tree` 回放时历史轮次的耗时照常显示。
 
@@ -47,6 +49,6 @@ node .pi/T/ext-verify/out-costtime.mjs
 
 **每轮写一条 entry**，会进 session jsonl，`/tree` 视图里能看到这些节点；`/compact` 之后被截断的旧轮次不再渲染耗时。
 
-**计时精度是秒**，`Math.floor(ms / 1000)`。不足 1 秒的轮次显示 `0s`。
+**计时精度是秒**，`Math.floor(ms / 1000)`。不足 1 秒的轮次显示 `0s`。秒是 tick 粒度，所以运行中的那行只会在整秒上跳（`1m 5s` → `1m 6s`）。
 
 **working 行只在一轮运行期间存在**：agent 结束后 pi 会清掉它，结束后要看耗时只能看对话流里那一条。

@@ -1,7 +1,7 @@
 // costtime.ts — 每轮耗时显示插件
 //
-// 运行中：输入框里的 working 行显示 `Working 12s`，每秒刷新
-// 结束：往会话追加一条 custom entry，在对话流里渲染成 `Worked 75s`
+// 运行中：输入框里的 working 行显示 `Working 1m 12s`，每秒刷新
+// 结束：往会话追加一条 custom entry，在对话流里渲染成 `Worked 1h 15m 3s`
 //
 // 计时口径是整个用户轮次：agent_start → agent_before_settle（含工具执行、重试、
 // 自动继续）。中途 agent_end 不停表——它之后可能还有重试或继续，只有 settle
@@ -22,8 +22,17 @@ const TICK_MS = 1000;
 // 结束后的条目颜色：耗时是辅助信息，用灰色。写语义色名而不是 hex，深浅主题各自解析。
 const COLOR: ThemeColor = "muted";
 
-function formatSeconds(ms: number): string {
-	return `${Math.floor(ms / 1000)}s`;
+/** 毫秒 → `NhNmNs`；值为 0 的单位省略（`1h`、`1m 5s`、`59s`），全 0 时给 `0s`。 */
+export function formatDuration(ms: number): string {
+	const total = Math.max(0, Math.floor(ms / 1000));
+	const parts: string[] = [];
+	const h = Math.floor(total / 3600);
+	const m = Math.floor(total / 60) % 60;
+	const s = total % 60;
+	if (h > 0) parts.push(`${h}h`);
+	if (m > 0) parts.push(`${m}m`);
+	if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+	return parts.join(" ");
 }
 
 export default function costtime(pi: ExtensionAPI): void {
@@ -33,7 +42,7 @@ export default function costtime(pi: ExtensionAPI): void {
 
 	const paint = (): void => {
 		if (startedAt === undefined) return;
-		ui?.setWorkingMessage(`Working ${formatSeconds(Date.now() - startedAt)}`);
+		ui?.setWorkingMessage(`Working ${formatDuration(Date.now() - startedAt)}`);
 	};
 
 	const stopTicker = (): void => {
@@ -82,6 +91,6 @@ export default function costtime(pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(ENTRY_TYPE, (entry, _options, theme) => {
 		const data = entry.data as { ms?: unknown } | undefined;
 		if (typeof data?.ms !== "number") return undefined;
-		return new Text(theme.fg(COLOR, `Worked ${formatSeconds(data.ms)}`), 1, 0);
+		return new Text(theme.fg(COLOR, `Worked ${formatDuration(data.ms)}`), 1, 0);
 	});
 }
