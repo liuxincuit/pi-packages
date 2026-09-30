@@ -27,11 +27,21 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 - **`agent_settled` handler 里发的消息会延迟执行**：`_emitAgentSettled` 先置 `_isEmittingAgentSettled = true`，跑完全部 settled handler 后才关闭它，然后逐个执行期间入队的 `prompt` / `sendUserMessage`，最后才 resolve 等待 idle 的 promise。两个可依赖的后果：settled handler 里发消息不会重入 `agent_start`（不必担心看到「新一轮已开始」的中间态）；`waitForIdle()` 返回时上一轮已彻底结束，所以「先 `waitForIdle()` → 注册收工回调 → 再发消息」这种顺序不会被上一轮的 `agent_settled` 抢先触发。
 - **`pi.appendEntry` 不返回 entry id**，且切分支之后写的 entry 落在**新分支**上。跨分支记账不能靠「就地更新」，要用「引用对方 id」：比如 START entry 的 data 里记 handoffId，判断是否已消费时扫全量 `getEntries()` 而不是当前分支——否则用户 `/tree` 回到旧分支会把同一件事再做一次。
 - **工具显隐是运行时状态**：`pi.setActiveTools()` 不写 session entry，`/tree` 切分支**不会**自动恢复。要按分支显示不同工具集，得在 `session_start` / `session_tree` 里自己重算（注意 `navigateTree` 之后新分支还没写标记，需要再同步一次）。
-- **扩展注册的工具会被自动激活**（reload 亦然）。「默认禁用」要在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉，且每次都跑。
+- **注册 ≠ 声明给模型**：`direct`/`model-only` 工具**注册时默认激活**（reload 亦然），所以「默认禁用」有两种写法——老办法是在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉（每次都跑）；pi ≥0.99 更干净：注册时带 `defaultActive: false`，工具进注册表但不声明给模型，再用 `pi.setActiveTools()` 按需激活。没有注销 API，要撤回已注册的工具就**同名重新注册 + `exposure: "hidden"`**（内置 `codemode` / `tool-search` 就是这么控制自身暴露的）
+- **`tool_result` handler 里可以改活动集**：工具结果处理中调 `pi.setActiveTools()` 有效，改动在**下一个 turn** 生效（session 里表现为一条新的 system 消息带 `toolsAdded`/`toolsRemoved`）——所以「工具结果里发现某目录/某能力可用 → 注入 `<system-reminder>` + `notify` + 启用对应工具」能让模型在下一次请求里同时看到提示和工具。代价是请求前缀变了：对无法表达工具集变更的 provider，pi 会发完整 transcript checkpoint（缓存前缀失效），别在热路径上反复改
 
 这几条组合起来即完整的「阶段交接」模式：工具落盘一个待执行 entry → `agent_settled` 里派发内部命令 → 命令里切分支 + 注入 prompt，并按分支重算工具显隐。
 
 ## 验证（仓库无 node_modules）
+
+**先对齐版本再动手**：扩展仓库的 `devDependencies` 常落后于你实际运行的 pi（peer 写成 `*`，本地 `node_modules` 是好几个月前装的）。用新 API 前先比对：
+
+```bash
+node -p "require('./node_modules/@earendil-works/pi-coding-agent/package.json').version"
+pi --version
+```
+
+落后就 `npm i -D @earendil-works/pi-coding-agent@<实际版本>`（lock 会大改，单独一个 commit）。否则类型里根本没有新字段（如 pi 0.99 才有的 `defaultActive`、`ToolResultEvent.structuredContent`），要么编译不过，要么被迫 cast 把真问题掩盖掉。
 
 **零安装路线**：pi 自带的 `node_modules` 里已经有 esbuild / typebox / jiti，直接引用，不必再建临时目录 `npm i`。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
 
@@ -106,6 +116,24 @@ for (const err of result.errors) console.log(" FAIL", err.path, "|", err.error);
 ```
 
 它同时也是 **pi 升级后的首选回归手段**：换版本后先跑它，`errors` 为空再谈其他；输出里每个扩展注册的 handlers / tools / commands 能直接看出「注册点是否还在」。
+
+**端到端验证（验「模型实际看到了什么」）**：mock 验的是扩展自己的逻辑，验不了 pi 是否真把工具声明给模型、是否真注入了技能。最便宜的办法是用真实 pi 跑一次 print 会话，再读 session JSONL：
+
+```bash
+# 在目标 cwd 里执行；-e 用扩展入口的绝对路径，--session-dir 隔离会话，别污染真实会话
+pi -p --no-extensions -e /abs/path/extensions/foo.ts --session-dir .tmp/s1 "只回复 ok"
+```
+
+```python
+# session JSONL 里可直接断言：
+#   第一条 system 消息的 toolsAdded           → 声明给模型的工具（不在 = 没声明）
+#   第一条 system 消息的 sections.skills      → 被注入的技能
+#   后续 system 消息的 toolsAdded/toolsRemoved → 会话中途的工具集变更
+```
+
+- `-p`（print）模式 `hasUI = false`，`ctx.ui.notify`/`setStatus` 什么都不做，验不了 UI 提示。要验就用 **RPC 模式**：`pi --mode rpc`，stdin 发 `{"id":"r1","type":"prompt","message":"..."}`，stdout 上能抓到 `extension_ui_request`（`notify` / `setStatus` / `setWidget`…）——与 TUI 同源。
+- 项目级 `.pi/` 配置只在 `isProjectTrusted()` 为真时生效；非交互运行要加 `--approve`，否则项目配置被静默忽略（症状：改了配置“没生效”）。
+- 记得 `--no-extensions`（关掉其他扩展，`-e` 仍生效），否则测出来的工具/技能集里混着别人的东西。
 
 **纯逻辑单测**（拆出 `logic.ts` 之类的无依赖模块才能这么跑）：
 
