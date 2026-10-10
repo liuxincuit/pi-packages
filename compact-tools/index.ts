@@ -218,6 +218,17 @@ function shortenPath(inputPath: string | undefined): string {
 	return inputPath.startsWith(home) ? `~${inputPath.slice(home.length)}` : inputPath;
 }
 
+/**
+ * 末段为 SKILL.md 时返回技能名（父目录名）。pi 把技能当普通文件读，
+ * 只能靠文件名区分，路径里没有别的线索；不叫 SKILL.md 的文件一律不算技能。
+ */
+function skillNameFromPath(inputPath: unknown): string | undefined {
+	if (typeof inputPath !== "string" || !inputPath) return undefined;
+	const segments = inputPath.replace(/\\/g, "/").split("/").filter((s) => s.length > 0);
+	if (segments[segments.length - 1] !== "SKILL.md") return undefined;
+	return segments[segments.length - 2] || "skill";
+}
+
 function extractTextOutput(result: any): string {
 	const blocks = Array.isArray(result?.content) ? result.content : [];
 	return blocks
@@ -402,12 +413,13 @@ function renderPartialText(
 export default function (pi: any) {
 	const cwd = process.cwd();
 
-	type ToolDetail = { detail: string; parts?: Array<{ text: string; color?: string }> };
+	// label 是工具的默认名；getDetail 可以按参数与渲染状态覆盖它（技能读取要显示成 [skill] <名字>）
+	type ToolDetail = { label?: string; detail: string; parts?: Array<{ text: string; color?: string }> };
 
 	function registerTool(
 		tool: any,
 		label: string,
-		getDetail: (a: any, t: any) => ToolDetail,
+		getDetail: (a: any, t: any, c: any) => ToolDetail,
 		getSummary?: (r: any, o: any, t: any, a: any, isError: boolean) => string | undefined,
 	) {
 		pi.registerTool({
@@ -434,26 +446,27 @@ export default function (pi: any) {
 				// 否则模型产出参数时界面整段空白。执行开始或已有 result 时让 renderResult 独占，
 				// 也包括 /reload 重放历史（那时不会再发 tool_execution_start）。
 				if (c?.executionStarted || !c?.isPartial) return new Container();
-				const { detail, parts } = getDetail(a || {}, t);
+				const { label: customLabel, detail, parts } = getDetail(a || {}, t, c);
 				const text = c?.lastComponent instanceof Text ? c.lastComponent : new Text("", 0, 0);
 				const suffix = (parts ?? []).map((p) => " " + t.fg(p.color ?? "muted", p.text)).join("");
 				text.setText(
-					t.fg("dim", BORDER) + t.bold(label + " ") + (detail ? truncateDetail(detail) : "") + suffix,
+					t.fg("dim", BORDER) + t.bold((customLabel ?? label) + " ") + (detail ? truncateDetail(detail) : "") + suffix,
 				);
 				return text;
 			},
 			renderResult(r: any, o: any, t: any, c: any) {
-				const { detail, parts } = getDetail(c?.args || {}, t);
+				const { label: customLabel, detail, parts } = getDetail(c?.args || {}, t, c);
+				const shownLabel = customLabel ?? label;
 				const err = isToolError(r, c);
 				// Partial (in-progress): spinner + any streamed text
 				if (o.isPartial) {
 					const streamed = r.content?.filter((x: any) => x?.type === "text").map((x: any) => x.text).join("") || "";
 					if (!o.expanded || (!detail && !streamed)) {
-						return renderPartialText(label, detail, parts, t, c);
+						return renderPartialText(shownLabel, detail, parts, t, c);
 					}
 					const lines = [];
 					if (detail) {
-						lines.push(addBorder(t.bold(label + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, "dim"));
+						lines.push(addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, "dim"));
 					}
 					if (streamed) {
 						lines.push(addBorder(sanitizeAnsiForThemedOutput(streamed), t, "dim"));
@@ -465,7 +478,7 @@ export default function (pi: any) {
 				if (isTruncated(r)) tailParts.push({ text: "• truncated", color: "warning" });
 				const color = err ? "error" : "success";
 				if (!o.expanded) {
-					const title = titleLine(label, truncateDetail(detail), t, color, tailParts);
+					const title = titleLine(shownLabel, truncateDetail(detail), t, color, tailParts);
 					const summary = getSummary?.(r, o, t, c?.args || {}, err);
 					if (summary) {
 						return new Text(title + "\n" + t.fg("muted", "  " + summary), 0, 0);
@@ -475,7 +488,7 @@ export default function (pi: any) {
 				// Expanded: full detail + output, all lines use state color (dim/success/error)
 				const contentLines = [];
 				if (detail) {
-					contentLines.push(addBorder(t.bold(label + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, color));
+					contentLines.push(addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, color));
 				}
 				const partsText = r.content?.filter((c: any) => c?.type === "text").map((c: any) => c.text) || [];
 				if (r.details?.diff) partsText.push(r.details.diff);
@@ -487,8 +500,8 @@ export default function (pi: any) {
 		});
 	}
 
-	registerTool(createReadTool(cwd), "read", (a) => {
-		const path = shortenPath(a.path || "");
+	registerTool(createReadTool(cwd), "read", (a, _t, c) => {
+		const rawPath = typeof a.path === "string" ? a.path : "";
 		const offset = typeof a.offset === "number" ? a.offset : undefined;
 		const limit = typeof a.limit === "number" ? a.limit : undefined;
 		let range: string | undefined;
@@ -497,9 +510,23 @@ export default function (pi: any) {
 			const to = limit !== undefined ? from + limit - 1 : undefined;
 			range = to !== undefined ? `:${from}-${to}` : `:${from}`;
 		}
-		return { detail: path, parts: range ? [{ text: range }] : undefined };
+		const skill = skillNameFromPath(rawPath);
+		// 技能折叠成单行 [skill] <名字>，第二行摘要由 getSummary 一起省掉。展开后退回 read + 路径，
+		// 保留文件位置信息。展开提示只挂终态：参数流式、执行中、结果流式都不显示；
+		// 出错时没有内容可展开，也不显示。行范围照旧沿用警告色显示。
+		if (skill && c?.expanded !== true) {
+			const finalState = c?.isPartial !== true && c?.isError !== true;
+			const parts = [
+				...(range ? [{ text: range }] : []),
+				...(finalState ? [{ text: `(${expandHint()})` }] : []),
+			];
+			return { label: `[skill] ${skill}`, detail: "", parts: parts.length > 0 ? parts : undefined };
+		}
+		return { detail: shortenPath(rawPath), parts: range ? [{ text: range }] : undefined };
 	}, (r, o, t, _a, _err) => {
 		if (_err) return undefined;
+		// 技能的展开提示已经在标题行里，不再出第二行摘要
+		if (skillNameFromPath(_a?.path)) return undefined;
 		const lineCount = prepareOutputLines(extractTextOutput(r), true).length;
 		if (lineCount === 0) return "↳ (empty)";
 		return `↳ loaded ${lineCount} ${pluralize(lineCount, "line")} · ${expandHint()}`;
