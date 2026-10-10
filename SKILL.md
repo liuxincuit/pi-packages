@@ -16,6 +16,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
   - `spawnHook` — 执行前改 command/cwd/env；**改不了 timeout**
   - `operations` — 整体替换执行后端（pi 官方 `createLocalBashOperations()` 保持原生行为），可注入默认 timeout 等
 - **timeout 语义**：bash 工具 schema 的 `timeout`（秒）是 LLM 可选参数，**无默认值**；LLM 调用时传的 timeout 是工具参数，不是 harness 调用超时。扩展可通过包装 operations 注入默认值，LLM 显式值优先
+- **渲染上下文（`ToolRenderContext`）**：`renderCall` / `renderResult` 的第三个参数带 `cwd` / `args` / `expanded` / `isError` / `isPartial` / `executionStarted` / `toolCallId` / `lastComponent` 等，按渲染状态切换文案全靠它。注意 `isPartial` **初始就是 `true`**（参数流式 → 执行中 → 结果流式全程为真），只有终态才为 `false`——想「只在完成后显示某提示」用它，别用 `executionStarted`
 
 ## 会话控制与会话树
 
@@ -34,14 +35,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 
 ## 验证（仓库无 node_modules）
 
-**先对齐版本再动手**：扩展仓库的 `devDependencies` 常落后于你实际运行的 pi（peer 写成 `*`，本地 `node_modules` 是好几个月前装的）。用新 API 前先比对：
-
-```bash
-node -p "require('./node_modules/@earendil-works/pi-coding-agent/package.json').version"
-pi --version
-```
-
-落后就 `npm i -D @earendil-works/pi-coding-agent@<实际版本>`（lock 会大改，单独一个 commit）。否则类型里根本没有新字段（如 pi 0.99 才有的 `defaultActive`、`ToolResultEvent.structuredContent`），要么编译不过，要么被迫 cast 把真问题掩盖掉。
+**版本对齐**：类型与 API 以实际运行的 pi 包为准——`pi --version` 看版本，`"$(npm root -g)/@earendil-works/pi-coding-agent"/dist/**/*.d.ts` 看类型定义。用新 API 前先确认该版本有对应字段，否则要么编译不过，要么被迫 cast 把真问题掩盖掉。
 
 **零安装路线**：pi 自带的 `node_modules` 里已经有 esbuild / typebox / jiti，直接引用，不必再建临时目录 `npm i`。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
 
@@ -117,6 +111,20 @@ for (const err of result.errors) console.log(" FAIL", err.path, "|", err.error);
 
 它同时也是 **pi 升级后的首选回归手段**：换版本后先跑它，`errors` 为空再谈其他；输出里每个扩展注册的 handlers / tools / commands 能直接看出「注册点是否还在」。
 
+**渲染级验证（验「TUI 里画出什么」）**：`loadExtensions` 返回的 `extension.tools` 是 `Map<工具名, { definition }>`，`definition` 就是 `registerTool` 收到的那个对象，`renderCall` / `renderResult` 可以直接调。配一个颜色透传的假 theme，用真实 pi-tui 组件渲染成纯文本，就能逐行断言文案：
+
+```js
+const theme = { fg: (_color, text) => text, bold: (text) => text };
+const tool = result.extensions[0].tools.get("read").definition;
+const ctx = { args: { path: "D:/x/SKILL.md" }, cwd, executionStarted: true, isPartial: false, expanded: false, isError: false, toolCallId: undefined, invalidate() {}, lastComponent: undefined };
+const component = tool.renderResult({ content: [{ type: "text", text: "..." }], details: undefined }, { expanded: false, isPartial: false }, theme, ctx);
+component.render(200).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));   // → 纯文本行，可断言
+```
+
+`toolCallId: undefined` 是有意的：带 spinner 的渲染器（如 compact-tools）见到 id 会起 `setInterval`，脚本不退出。
+
+折叠 / 展开 / 执行中 / 错误态都能用同一手法覆盖，比打包验证更接近「用户看到什么」——**手写推测的预览会漏细节**（提示的括号、行范围、折叠条件），跑一遍真实渲染才不会漏。
+
 **端到端验证（验「模型实际看到了什么」）**：mock 验的是扩展自己的逻辑，验不了 pi 是否真把工具声明给模型、是否真注入了技能。最便宜的办法是用真实 pi 跑一次 print 会话，再读 session JSONL：
 
 ```bash
@@ -191,6 +199,7 @@ console.log(execCalls.length, execCalls[0]);
 | 工具里 `sendUserMessage("/cmd", { deliverAs: "followUp" })` 想延后执行命令 | slash 命令是**立即执行**的，`deliverAs` 对它无效；还得显式传 `expandPromptTemplates: true`，否则命令根本不被派发 |
 | `/tree` 切分支后工具显隐不对 | `setActiveTools` 不持久化、不随分支恢复；在 `session_start` / `session_tree` 里重算 |
 | 验证脚本里写 `../../../pi/extensions/...` 被 pi-permission-system 拦成 external_directory | 它把相对路径按 cwd 解析后误判成工作目录外。不要换花样重试，改用工作目录内的绝对路径，或先向用户说明再操作 |
+| 脚本调扩展渲染时报 `Theme not initialized. Call initTheme() first.` | 渲染器里用了 `keyHint` / `keyText`（走全局 theme），脚本先 `initTheme("dark", false)`（从 `<pi>/dist/modes/interactive/theme/theme.js` 导入）。另外 `keyText` 在无 keybinding 配置时返回空串，别断言键位文本——默认值在 `<pi>/dist/core/keybindings.js` |
 
 ## 参考
 
