@@ -6,6 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { EXTENSION_DIR_NAME } from "./scope.ts";
+
 /** 触达通道：模型读 SKILL.md 记为 read，用户 `/skill:` 显式调用记为 explicit。 */
 export type UsageVia = "read" | "explicit";
 
@@ -19,7 +21,7 @@ export interface UsageEvent {
 
 /** 全局日志：<agentDir>/extensions/pi-skills/usage.jsonl */
 export function usageLogPath(agentDir: string): string {
-	return path.join(agentDir, "extensions", "pi-skills", "usage.jsonl");
+	return path.join(agentDir, "extensions", EXTENSION_DIR_NAME, "usage.jsonl");
 }
 
 function isVia(value: unknown): value is UsageVia {
