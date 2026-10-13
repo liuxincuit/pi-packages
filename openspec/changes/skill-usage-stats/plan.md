@@ -822,8 +822,10 @@ test("renderStats 对超长 skill 名截断且保持列对齐", () => {
 	const header = lines.find((l) => l.includes("3天"))!;
 	const row = lines.find((l) => l.includes("x"))!;
 	const col = (label: string) => displayWidth(header.slice(0, header.indexOf(label)));
+	// 列宽 = max(表头宽, 数据宽)；右对齐时个位数落在列的最后一格。
+	// 「3天」表头宽 3，个位数落在偏移 2，故取 3 宽已覆盖；「半年」表头宽 4，需取 4 宽。
 	assert.equal(cellAt(row, col("3天"), 3).trim(), "0");
-	assert.equal(cellAt(row, col("半年"), 3).trim(), "3");
+	assert.equal(cellAt(row, col("半年"), 4).trim(), "3");
 });
 
 test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
