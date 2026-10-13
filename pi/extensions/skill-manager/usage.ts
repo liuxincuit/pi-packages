@@ -29,6 +29,37 @@ function isNonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0;
 }
 
+/** 把 Windows 分隔符换成 `/`，其余字符原样保留。 */
+function toPosix(target: string): string {
+	return target.replaceAll("\\", "/");
+}
+
+/** 只认以 /SKILL.md 结尾的路径；`SKILL.md` 本身（无父目录）不算。 */
+export function isSkillFile(rawPath: string): boolean {
+	return toPosix(rawPath).endsWith("/SKILL.md");
+}
+
+/** 绝对路径：以 `/` 开头，或以盘符（如 `D:`）开头。 */
+function isAbsolutePath(posixPath: string): boolean {
+	return posixPath.startsWith("/") || posixPath[1] === ":";
+}
+
+/**
+ * 归一化为 `/` 分隔的路径：相对路径按 cwd 展开，绝对路径原样处理。
+ * 不做大小写转换，也不解析符号链接。绝对路径分支不使用 cwd，允许传空串。
+ */
+export function normalizeSkillPath(rawPath: string, cwd: string): string {
+	const posixPath = toPosix(rawPath);
+	const joined = isAbsolutePath(posixPath) ? posixPath : path.posix.join(toPosix(cwd), posixPath);
+	return path.posix.normalize(joined);
+}
+
+/** 取 SKILL.md 的父目录名作为技能名。入参须已归一化。 */
+export function skillNameOf(normalizedPath: string): string {
+	const segments = normalizedPath.split("/");
+	return segments[segments.length - 2] ?? "";
+}
+
 /** 序列化为单行 JSON，含行尾换行，便于追加写入。 */
 export function serializeEvent(event: UsageEvent): string {
 	return `${JSON.stringify(event)}\n`;
