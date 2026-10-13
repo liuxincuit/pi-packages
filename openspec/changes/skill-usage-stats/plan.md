@@ -93,7 +93,7 @@ Expected: FAIL —— 找不到模块 `./usage.ts`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（3 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -164,7 +164,7 @@ Expected: FAIL —— `isSkillFile is not a function`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（7 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -242,7 +242,7 @@ Expected: FAIL —— `readEvents is not a function`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（11 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -312,7 +312,7 @@ Expected: FAIL —— `USAGE_WINDOWS is not defined`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（15 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -361,7 +361,7 @@ Expected: FAIL —— `statsStart is not a function`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（17 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -464,7 +464,7 @@ Expected: FAIL —— `PendingReads is not a constructor`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（21 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
@@ -609,7 +609,7 @@ Expected: FAIL —— `explicitSkillPath is not a function`
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test pi/extensions/skill-manager/usage.test.mts`
-Expected: PASS（25 个测试）
+Expected: PASS 且 `fail 0`（含本任务新增的测试）
 
 - [ ] **Step 5: 提交并回写 checkbox**
 
