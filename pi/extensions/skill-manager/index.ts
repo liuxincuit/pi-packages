@@ -22,6 +22,14 @@ import {
 	type ScopeSetting,
 	type SettingsMap,
 } from "./scope.ts";
+import {
+	appendEvent,
+	isSkillFile,
+	normalizeSkillPath,
+	PendingReads,
+	shouldCommitRead,
+	usageLogPath,
+} from "./usage.ts";
 
 /**
  * 会话层设定，按 sessionId 隔离。
@@ -30,6 +38,14 @@ import {
  * 用模块级单例 Map 会让并发子代理互相覆盖，所以键必须是 sessionId。
  */
 const sessionSettings = new Map<string, SettingsMap>();
+
+/**
+ * 已经开始、但还没结束的 read 调用，按 toolCallId 索引。
+ *
+ * start 事件在工具执行之前发出，被拦下或没跑成的调用同样会留下条目，所以要在 end 时
+ * 用 `shouldCommitRead` 复核。这里只存归一化后的 skill 路径，落盘交给 end。
+ */
+const pendingReads = new PendingReads();
 
 function sessionKey(ctx: ExtensionContext): string {
 	return ctx.sessionManager.getSessionId();
@@ -129,6 +145,35 @@ export default function (pi: ExtensionAPI) {
 
 		const kept = skills.filter((skill) => resolved.get(skill.name)?.value !== "disabled");
 		if (kept.length !== skills.length) event.systemPromptOptions.skills = kept;
+	});
+
+	// read 通道：模型自己读 SKILL.md 也算一次使用。
+	pi.on("tool_execution_start", (event, ctx) => {
+		try {
+			if (event.toolName !== "read") return;
+			const raw = (event.args as { path?: unknown } | undefined)?.path;
+			if (typeof raw !== "string" || !isSkillFile(raw)) return;
+			pendingReads.record(event.toolCallId, normalizeSkillPath(raw, ctx.cwd));
+		} catch {
+			// 采集是旁路：这里抛错会连带让这次工具调用失败。
+		}
+	});
+
+	pi.on("tool_execution_end", (event, ctx) => {
+		try {
+			const skillPath = pendingReads.take(event.toolCallId);
+			if (!skillPath) return;
+			if (!shouldCommitRead({ durationMs: event.durationMs, isError: event.isError })) return;
+			appendEvent(usageLogPath(getAgentDir()), {
+				ts: new Date().toISOString(),
+				via: "read",
+				path: skillPath,
+				session: ctx.sessionManager.getSessionId(),
+				cwd: ctx.cwd,
+			});
+		} catch {
+			// 同上：记不上就算了，技能本身照常工作。
+		}
 	});
 
 	pi.registerCommand("skills", {
