@@ -13,7 +13,7 @@
 - `openspec/changes/skill-usage-stats/specs/skill-management/spec.md`（delta，命令参数补全）
 - `openspec/changes/skill-usage-stats/design.md`（决策 D1–D8 与风险）
 
-**Requirements:** 命令参数补全、Skill 调用记录、路径归一化、统计从安装起算不回填历史、统计起点在输出中可辨识、按滚动窗口聚合、统计表以日志为主轴分三段、最后使用时间、统计输出不进入模型上下文、日志缺失或损坏时降级为空记录、采集不改变会话行为
+**Requirements:** 命令参数补全、Skill 调用记录、路径归一化、统计自日志最早一条记录起算，不回填历史、统计起点在输出中可辨识、按滚动窗口聚合、统计表以日志为主轴分三段、最后使用时间、统计输出不进入模型上下文、日志缺失或损坏时降级为空记录、采集不改变会话行为
 
 ## Global Constraints
 
@@ -873,29 +873,40 @@ git commit -m "test(skill-manager): 统计表边界覆盖"
 
 **Interfaces:**
 - Consumes: Task 12 `renderStats`；Task 5 `statsStart`
-- Produces: `renderStats` 的尾部标注（`start` 缺省时不输出该行）
+- Produces: `renderStats` 开头的统计起点标注（`start` 缺省或无法解析时不输出该行）
 
 **覆盖 Review Focus #5。**
 
 - [ ] **Step 1: 写失败测试**
 
 ```ts
-test("renderStats 有统计起点时标注，且不足半年时提示不完整", () => {
-	const out = renderStats(input, { now: NOW, start: at(24 * 30) });   // 30 天前
-	assert.match(out, /统计自/);
-	assert.match(out, /不足 180 天|覆盖不完整/);
+test("renderStats 有统计起点时标注，起点比多个窗口更近时逐个点名覆盖不完整的窗口", () => {
+	// 10 天前的起点短于「1月」「3月」「半年」三个窗口的跨度：三个都得点名。
+	const out = renderStats(input, { now: NOW, start: at(24 * 10) });
+	assert.match(out, /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起（1月、3月、半年窗口覆盖不完整）$/m);
 });
 
-test("renderStats 起点超过半年时不提示不完整", () => {
+test("renderStats 起点落在 3 月窗口内时，连带点名 3 月窗口", () => {
+	// 40 天前的起点仍在「3月」窗口的时间范围内：只写最长窗口会漏掉它，
+	// 用户会照着没被点名的「3月」列读出「三个月没用过」。
+	const out = renderStats(input, { now: NOW, start: at(24 * 40) });
+	assert.match(out, /（3月、半年窗口覆盖不完整）/);
+});
+
+test("renderStats 起点已覆盖全部窗口时不提示不完整", () => {
 	const out = renderStats(input, { now: NOW, start: at(24 * 200) });
 	assert.match(out, /统计自/);
 	assert.doesNotMatch(out, /不完整/);
+	// 标注随表头一起可见：跑到表尾的话，长表的读者根本看不到它。
+	assert.equal(out.split("\n")[0]!.startsWith("统计自"), true);
 });
 
 test("renderStats 无统计起点时不输出标注行", () => {
 	assert.doesNotMatch(renderStats(input, { now: NOW }), /统计自/);
 });
 ```
+
+断言里不得出现字面量天数（`/不足 180 天/` 这类）：提示文案只列窗口标签，阈值由 `USAGE_WINDOWS` 派生，写死天数的断言会把两套口径钉在一起。
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -904,7 +915,13 @@ Expected: FAIL —— 未出现「统计自」
 
 - [ ] **Step 3: 实现**
 
-表尾追加一行：`统计自 <时间> 起`；当 `now - start >= 4320 小时` 时不加后缀，否则在同一条里补 `（不足半年，半年窗口覆盖不完整）`。阈值 SHALL 由 `USAGE_WINDOWS` 的最长窗口派生，不得硬编码 180 天。
+在**表头之前**追加一行（不是表尾）：`统计自 <时间> 起`。起点比某些窗口更近时，在同一行里补 `（<窗口标签>、<窗口标签>窗口覆盖不完整）`：逐个比较 `USAGE_WINDOWS` 里各窗口的跨度与日志年龄，跨度大于日志年龄的窗口全部点名，顺序即 `USAGE_WINDOWS` 的顺序（短→长）；日志年龄不短于全部窗口时只留 `统计自 <时间> 起`，一个字都不加。
+
+只点名最长窗口是不够的：40 天前的起点同时让「3月」与「半年」覆盖不全，而用户正是照着这两列判断「三个月没用了」——没被点名的那个窗口才是误导的来源。
+
+判定 SHALL 以 `USAGE_WINDOWS` 为唯一来源，SHALL NOT 出现字面量天数（`180 天`、`4320 小时` 之类）。边界上日志年龄恰等于某窗口跨度时该窗口算覆盖完整（窗口计数含 `ageHours == window.hours` 的调用，两处口径必须一致），故起点恰在最长窗口上时不加后缀。
+
+标注 SHALL 排在段标题与表头之前，而非表尾：长表里盯着表头的读者看不到表尾那一行，而这行正是防「把窗口里的 0 读成从未使用」的唯一提示。
 
 **时间 SHALL 按本机时区格式化**（`getFullYear`/`getMonth`/`getDate`/`getHours`/`getMinutes` + 补零），**不得用 `toISOString()`**：无时区标记的 UTC 串长得和本地时间一样，非 UTC 时区的读者无从察觉差了偏移。测试侧用同一组本机 getter 推导期望串（两边同一时区，断言依旧确定）。
 
