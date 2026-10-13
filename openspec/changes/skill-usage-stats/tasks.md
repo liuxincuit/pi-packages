@@ -18,7 +18,7 @@
 ## 3. 显式调用通道
 
 - [x] 3.1 把「某条消息是否触发了 skill 显式调用」提取为不依赖 pi 运行时的纯函数（输入消息角色与文本块，输出 SKILL.md 路径或空）；单元测试断言非 user 消息、无 skill 块的消息、解析失败的消息都不产出记录
-- [ ] 3.2 在 `index.ts` 注册 `message_start`，对 user 消息调用 3.1 的判定并写入日志；验证：执行 `/skill:<某个已加载的 skill>` 后日志出现一条 `"via":"explicit"` 记录，且其 path 与对应 skill 的 SKILL.md 一致
+- [x] 3.2 在 `index.ts` 注册 `message_start`，对 user 消息调用 3.1 的判定并写入日志；验证：执行 `/skill:<某个已加载的 skill>` 后日志出现一条 `"via":"explicit"` 记录，且其 path 与对应 skill 的 SKILL.md 一致
 
 ## 4. 统计表渲染（扩展 render.ts）
 

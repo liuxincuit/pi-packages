@@ -7,7 +7,7 @@
  * 所有输出只走 ctx.ui.notify。这里绝不能改用 pi.sendMessage()：那会把整张表写进模型上下文。
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseSkillBlock, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 import { completionsFor } from "./complete.ts";
 import { renderTable } from "./render.ts";
@@ -24,6 +24,7 @@ import {
 } from "./scope.ts";
 import {
 	appendEvent,
+	explicitSkillPath,
 	isSkillFile,
 	normalizeSkillPath,
 	PendingReads,
@@ -192,6 +193,25 @@ export default function (pi: ExtensionAPI) {
 			pendingBySession.delete(key);
 		} catch {
 			// 同上：这里也吞掉。
+		}
+	});
+
+	// explicit 通道：用户敲 `/skill:<name>` 时，pi 在消息进会话之前就把 SKILL.md 展开成了 <skill> 块。
+	// 挂 message_start 而不是 input：input 链上任何 handler 返回 handled 都能让这条输入根本走不到这里，
+	// 而那种情况下调用确实没发生，漏记才是对的。
+	pi.on("message_start", (event, ctx) => {
+		try {
+			const skillPath = explicitSkillPath(event.message, parseSkillBlock, ctx.cwd);
+			if (!skillPath) return;
+			appendEvent(usageLogPath(getAgentDir()), {
+				ts: new Date().toISOString(),
+				via: "explicit",
+				path: skillPath,
+				session: sessionKey(ctx),
+				cwd: ctx.cwd,
+			});
+		} catch {
+			// 同上：抛出去也只会进扩展错误日志，这里吞掉让它彻底静音。
 		}
 	});
 
