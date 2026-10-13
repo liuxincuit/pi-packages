@@ -121,3 +121,49 @@ export function appendEvent(filePath: string, event: UsageEvent): void {
 		// 记不上就算了，技能本身照常工作。
 	}
 }
+
+/** 五个累积窗口，`counts` 与下标同序。 */
+export const USAGE_WINDOWS: readonly { label: string; hours: number }[] = [
+	{ label: "3天", hours: 72 },
+	{ label: "7天", hours: 168 },
+	{ label: "1月", hours: 720 },
+	{ label: "3月", hours: 2160 },
+	{ label: "半年", hours: 4320 },
+];
+
+export interface UsageStats {
+	/** 与 `USAGE_WINDOWS` 同序的累积次数。 */
+	counts: number[];
+	/** 全部窗口之外的调用也计入。 */
+	total: number;
+	lastUsed?: string;
+}
+
+function statsOf(stats: Map<string, UsageStats>, name: string): UsageStats {
+	const existing = stats.get(name);
+	if (existing) return existing;
+	const created: UsageStats = { counts: USAGE_WINDOWS.map(() => 0), total: 0 };
+	stats.set(name, created);
+	return created;
+}
+
+/**
+ * 按 `skillNameOf(path)` 聚合事件。窗口按距 `now` 的滚动小时算，累积计数。
+ * `ts` 无法解析的事件整条丢弃：既不进任何窗口，也不计 `total`，
+ * 单独出现时也不会在结果里留下该 skill 的条目。
+ */
+export function aggregate(events: UsageEvent[], now: Date): Map<string, UsageStats> {
+	const stats = new Map<string, UsageStats>();
+	for (const event of events) {
+		const time = Date.parse(event.ts);
+		if (Number.isNaN(time)) continue;
+		const entry = statsOf(stats, skillNameOf(event.path));
+		entry.total += 1;
+		const ageHours = (now.getTime() - time) / 3600_000;
+		USAGE_WINDOWS.forEach((window, i) => {
+			if (ageHours <= window.hours) entry.counts[i] += 1;
+		});
+		if (entry.lastUsed === undefined || time > Date.parse(entry.lastUsed)) entry.lastUsed = event.ts;
+	}
+	return stats;
+}
