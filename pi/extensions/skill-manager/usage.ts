@@ -184,3 +184,46 @@ export function statsStart(events: UsageEvent[]): string | undefined {
 	}
 	return start;
 }
+
+/** `tool_execution_end` 事件里与本判定相关的字段。 */
+export interface ReadEnd {
+	durationMs?: number;
+	isError: boolean;
+}
+
+/**
+ * read 通道的提交判据：只有真的执行过且没出错才记为一次使用。
+ *
+ * `tool_execution_start` 在工具执行**之前**发出，被 block、工具不存在、中途中断的调用同样有 start 事件，
+ * 所以「有 start」不等于「跑过」。这些没跑成的路径都不填 `durationMs`（只有真执行完的才带上），
+ * 因此 `durationMs === undefined` 是「没执行」的精确信号，再用 `isError` 把「跑了但读失败」挡掉。
+ */
+export function shouldCommitRead(end: ReadEnd): boolean {
+	return end.durationMs !== undefined && end.isError === false;
+}
+
+/**
+ * 尚未配对的 read 调用：`tool_execution_start` 记账，`tool_execution_end` 取走。
+ * 取走即删除，同一个 toolCallId 不会被提交两次；会话结束时整体 `clear`。
+ */
+export class PendingReads {
+	private readonly paths = new Map<string, string>();
+
+	record(toolCallId: string, skillPath: string): void {
+		this.paths.set(toolCallId, skillPath);
+	}
+
+	take(toolCallId: string): string | undefined {
+		const skillPath = this.paths.get(toolCallId);
+		this.paths.delete(toolCallId);
+		return skillPath;
+	}
+
+	clear(): void {
+		this.paths.clear();
+	}
+
+	get size(): number {
+		return this.paths.size;
+	}
+}

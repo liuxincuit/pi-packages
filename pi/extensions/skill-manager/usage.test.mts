@@ -10,8 +10,10 @@ import {
 	isSkillFile,
 	normalizeSkillPath,
 	parseEvent,
+	PendingReads,
 	readEvents,
 	serializeEvent,
+	shouldCommitRead,
 	skillNameOf,
 	statsStart,
 	USAGE_WINDOWS,
@@ -166,4 +168,35 @@ test("statsStart 取最早一条记录的时间", () => {
 
 test("statsStart 对空日志返回 undefined", () => {
 	assert.equal(statsStart([]), undefined);
+});
+
+test("shouldCommitRead 只在真的执行且没出错时为真", () => {
+	assert.equal(shouldCommitRead({ durationMs: 3, isError: false }), true);
+	assert.equal(shouldCommitRead({ durationMs: 3, isError: true }), false);
+	// 极快的执行会四舍五入成 0，用真值判断会把它误判成「没跑」。
+	assert.equal(shouldCommitRead({ durationMs: 0, isError: false }), true);
+	assert.equal(shouldCommitRead({ isError: false }), false); // 被 block / 未执行
+	assert.equal(shouldCommitRead({ isError: true }), false);
+});
+
+test("PendingReads 取出即删除，重复取返回 undefined", () => {
+	const p = new PendingReads();
+	p.record("c1", "D:/s/foo/SKILL.md");
+	assert.equal(p.size, 1);
+	assert.equal(p.take("c1"), "D:/s/foo/SKILL.md");
+	assert.equal(p.take("c1"), undefined);
+	assert.equal(p.size, 0);
+});
+
+test("PendingReads clear 清空全部", () => {
+	const p = new PendingReads();
+	p.record("c1", "a");
+	p.record("c2", "b");
+	p.clear();
+	assert.equal(p.size, 0);
+	assert.equal(p.take("c1"), undefined);
+});
+
+test("take 未记录过的 id 返回 undefined", () => {
+	assert.equal(new PendingReads().take("nope"), undefined);
 });
