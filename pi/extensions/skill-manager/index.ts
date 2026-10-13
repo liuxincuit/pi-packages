@@ -10,7 +10,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir, parseSkillBlock, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 import { completionsFor } from "./complete.ts";
-import { renderTable } from "./render.ts";
+import { renderStats, renderTable } from "./render.ts";
 import { readSkills, type SkillsContext } from "./skills.ts";
 import {
 	globalConfigPath,
@@ -24,11 +24,14 @@ import {
 } from "./scope.ts";
 import {
 	appendEvent,
+	buildStats,
 	explicitSkillPath,
 	isSkillFile,
 	normalizeSkillPath,
 	PendingReads,
+	readEvents,
 	shouldCommitRead,
+	statsStart,
 	usageLogPath,
 } from "./usage.ts";
 
@@ -248,6 +251,24 @@ export default function (pi: ExtensionAPI) {
 				const value: ScopeSetting = action === "disable" ? "disabled" : "enabled";
 				const summary = await applySetting(scope, name, value, ctx);
 				ctx.ui.notify(`${summary}\n\n${renderCurrent(ctx)}`, "info");
+				return;
+			}
+
+			if (action === "stats") {
+				// 统计只读日志与已加载清单，输出也只走 notify：不进模型上下文是这条命令的契约。
+				try {
+					const events = readEvents(usageLogPath(getAgentDir()));
+					const known = skillsOf(ctx);
+					refreshSkillNames(known);
+					const input = buildStats(
+						events,
+						known.map((entry) => ({ name: entry.name, filePath: entry.filePath })),
+						new Date(),
+					);
+					ctx.ui.notify(renderStats(input, { now: new Date(), start: statsStart(events) }), "info");
+				} catch {
+					ctx.ui.notify("统计读取失败。", "warning");
+				}
 				return;
 			}
 
