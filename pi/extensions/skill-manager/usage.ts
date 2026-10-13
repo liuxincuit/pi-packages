@@ -167,3 +167,20 @@ export function aggregate(events: UsageEvent[], now: Date): Map<string, UsageSta
 	}
 	return stats;
 }
+
+/**
+ * 统计起点：最早一条事件的 `ts` 原文，没有可用记录时返回 undefined。
+ * 时间戳无法解析的事件被跳过（它们不可能成为最小值），返回的字符串保持原写法。
+ */
+export function statsStart(events: UsageEvent[]): string | undefined {
+	let start: string | undefined;
+	let earliest = Number.POSITIVE_INFINITY;
+	for (const event of events) {
+		const time = Date.parse(event.ts);
+		if (time < earliest) {
+			earliest = time;
+			start = event.ts;
+		}
+	}
+	return start;
+}

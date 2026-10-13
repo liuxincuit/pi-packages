@@ -13,6 +13,7 @@ import {
 	readEvents,
 	serializeEvent,
 	skillNameOf,
+	statsStart,
 	USAGE_WINDOWS,
 	usageLogPath,
 	type UsageEvent,
@@ -148,4 +149,21 @@ test("aggregate 丢弃时间戳无法解析的事件", () => {
 	assert.equal(mixed.has("foo"), false);
 	assert.equal(mixed.get("bar")!.total, 1);
 	assert.deepEqual(mixed.get("bar")!.counts, [0, 1, 1, 1, 1]);
+});
+
+test("statsStart 取最早一条记录的时间", () => {
+	assert.equal(statsStart([ev(100, "a"), ev(5, "b")]), at(100));
+	// 带偏移的写法要原样返回，不重新格式化成 `Z`：
+	// 字面量更晚但实际更早的一条才是起点，重新格式化会把它写成 at(120)。
+	const offsetEarlier = { ...ev(5, "a"), ts: zoned(120, 8) };
+	assert.equal(statsStart([ev(100, "a"), offsetEarlier]), zoned(120, 8));
+	// 比的是解析后的时刻，不是字面量：这一条与 at(100) 字面量只差一个后缀，
+	// 但实际晚 8 小时，按字符串比大小会误把它当起点。
+	const offsetLater = { ...ev(5, "b"), ts: zoned(92, -8) };
+	assert.notEqual(offsetLater.ts, at(100)); // 看门狗：钉住两条不同写法，不构成覆盖
+	assert.equal(statsStart([ev(100, "a"), offsetLater]), at(100));
+});
+
+test("statsStart 对空日志返回 undefined", () => {
+	assert.equal(statsStart([]), undefined);
 });
