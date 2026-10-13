@@ -1,10 +1,11 @@
 /**
- * 清单文本表的渲染。
+ * 清单文本表与用量统计表的渲染。
  *
- * 本模块只依赖类型，不 import pi 运行时，因此可以用 `node --test` 直接运行。
+ * 本模块不 import pi 运行时，只用到 `usage.ts` 的窗口定义与类型，因此可以用 `node --test` 直接运行。
  */
 import type { SkillEntry } from "./skills.ts";
 import type { ResolvedSetting, ScopeName } from "./scope.ts";
+import { USAGE_WINDOWS, type StatsEntry, type StatsInput } from "./usage.ts";
 
 const WIDE_RANGES: Array<[number, number]> = [
 	[0x1100, 0x115f],
@@ -127,4 +128,74 @@ export function renderTable(
 		);
 	}
 	return lines.join("\n");
+}
+
+const NAME_HEADER = "名称";
+const LAST_USED_HEADER = "最后使用";
+const SECTION_LOADED = "当前加载";
+const SECTION_UNLOADED = "当前未加载";
+const SECTION_UNRECORDED = "当前加载但无记录";
+
+const DAY_MS = 86_400_000;
+/** 一个月按 30 天算；不足一月不进入「个月前」的写法。 */
+const MONTH_DAYS = 30;
+
+export interface StatsRenderOptions {
+	/** 当前时刻，用来算「最后使用」的距今时长。 */
+	now: Date;
+	/** 统计起点（ISO 时间串）。缺省表示日志里没有任何可用记录。 */
+	start?: string;
+	/** 名称列的最大显示宽度。缺省取全部行里最长的名称。 */
+	nameWidth?: number;
+}
+
+/** 「最后使用」列的文案：今天 / 昨天 / `<n>天前` / `<n>个月前`。 */
+function lastUsedLabel(lastUsed: string | undefined, now: Date): string {
+	const time = lastUsed === undefined ? Number.NaN : Date.parse(lastUsed);
+	if (Number.isNaN(time)) return "-";
+	// 时钟回拨时差值可能为负，按「今天」处理，不出现「-1 天前」。
+	const days = Math.max(0, Math.floor((now.getTime() - time) / DAY_MS));
+	if (days === 0) return "今天";
+	if (days === 1) return "昨天";
+	if (days < MONTH_DAYS) return `${days}天前`;
+	return `${Math.floor(days / MONTH_DAYS)}个月前`;
+}
+
+/** 右对齐：把 `text` 顶到 `width` 的右缘。 */
+function padLeft(text: string, width: number): string {
+	const gap = width - displayWidth(text);
+	return gap > 0 ? " ".repeat(gap) + text : text;
+}
+
+/**
+ * 渲染用量统计表：三段各自「标题 + 表头 + 数据行」，空段整段跳过。
+ *
+ * 名称列宽与五个数字列宽在三段之间统一算，数字列宽取该列表头与全部数字的较大者，
+ * 这样同一列在「当前加载」与「当前未加载」两段里对齐。
+ */
+export function renderStats(input: StatsInput, options: StatsRenderOptions): string {
+	const recorded = [...input.loaded, ...input.unloaded];
+	const cells = recorded.map((entry) => USAGE_WINDOWS.map((_, i) => String(entry.counts[i] ?? 0)));
+	const numberWidths = USAGE_WINDOWS.map((window, col) =>
+		cells.reduce((max, row) => Math.max(max, displayWidth(row[col] ?? "")), displayWidth(window.label)),
+	);
+	const longestName = recorded.reduce((max, entry) => Math.max(max, displayWidth(entry.name)), 0);
+	const nameWidth = Math.max(displayWidth(NAME_HEADER), options.nameWidth ?? longestName);
+
+	const header = `  ${pad(NAME_HEADER, nameWidth)}  ${USAGE_WINDOWS.map((window, col) => pad(window.label, numberWidths[col]!)).join("  ")}  ${LAST_USED_HEADER}`;
+	const drawRow = (entry: StatsEntry, index: number): string => {
+		const numbers = cells[index]!.map((cell, col) => padLeft(cell, numberWidths[col]!)).join("  ");
+		const name = pad(truncate(entry.name, nameWidth), nameWidth);
+		return `  ${name}  ${numbers}  ${lastUsedLabel(entry.lastUsed, options.now)}`;
+	};
+
+	const lines: string[] = [];
+	const section = (title: string, rows: string[]): void => {
+		if (rows.length > 0) lines.push(title, header, ...rows);
+	};
+	section(SECTION_LOADED, input.loaded.map((entry, i) => drawRow(entry, i)));
+	section(SECTION_UNLOADED, input.unloaded.map((entry, i) => drawRow(entry, input.loaded.length + i)));
+	if (input.unrecorded.length > 0) lines.push(SECTION_UNRECORDED, `  ${input.unrecorded.join("、")}`);
+
+	return lines.length > 0 ? lines.join("\n") : "没有可展示的统计。";
 }

@@ -185,6 +185,71 @@ export function statsStart(events: UsageEvent[]): string | undefined {
 	return start;
 }
 
+/** 统计表里的一行：显示名、与 `USAGE_WINDOWS` 同序的次数、最后使用时间。 */
+export interface StatsEntry {
+	name: string;
+	counts: number[];
+	lastUsed?: string;
+}
+
+/** 统计表的三段：已加载且有记录、有记录但当前未加载、已加载但无记录。 */
+export interface StatsInput {
+	loaded: StatsEntry[];
+	unloaded: StatsEntry[];
+	unrecorded: string[];
+}
+
+/** 排序主键所在的窗口下标：最长的「半年」窗口。 */
+const HALF_YEAR_INDEX = USAGE_WINDOWS.length - 1;
+
+function byName(a: string, b: string): number {
+	if (a === b) return 0;
+	return a < b ? -1 : 1;
+}
+
+/** 半年次数降序，次数相同按显示名升序。 */
+function byUsage(a: StatsEntry, b: StatsEntry): number {
+	const diff = (b.counts[HALF_YEAR_INDEX] ?? 0) - (a.counts[HALF_YEAR_INDEX] ?? 0);
+	return diff !== 0 ? diff : byName(a.name, b.name);
+}
+
+/**
+ * 把日志聚合结果与当前已加载的 skill 对照，分成三段。
+ *
+ * 配对键两侧同源，都是 SKILL.md 的父目录名：事件侧由 `aggregate` 保证，已加载侧用
+ * `skillNameOf(normalizeSkillPath(filePath, ""))` 算出。不拿 pi 的 `name` 配对——
+ * `name` 允许与目录名不同，两个来源的键一旦错开，同一个 skill 的调用会被拆到两行。
+ * 显示名则反过来：已加载的行有 pi 的 `name` 可用，未加载的行（幽灵）没有，只能用目录名。
+ */
+export function buildStats(
+	events: UsageEvent[],
+	loadedSkills: Array<{ name: string; filePath: string }>,
+	now: Date,
+): StatsInput {
+	const stats = aggregate(events, now);
+	/** 已加载 skill 的配对键 → 显示名。 */
+	const loadedNames = new Map(
+		loadedSkills.map((skill) => [skillNameOf(normalizeSkillPath(skill.filePath, "")), skill.name]),
+	);
+
+	const loaded: StatsEntry[] = [];
+	const unloaded: StatsEntry[] = [];
+	for (const [key, usage] of stats) {
+		const name = loadedNames.get(key);
+		const entry: StatsEntry = { name: name ?? key, counts: usage.counts, lastUsed: usage.lastUsed };
+		(name === undefined ? unloaded : loaded).push(entry);
+	}
+	loaded.sort(byUsage);
+	unloaded.sort(byUsage);
+
+	const unrecorded = loadedSkills
+		.filter((skill) => !stats.has(skillNameOf(normalizeSkillPath(skill.filePath, ""))))
+		.map((skill) => skill.name)
+		.sort(byName);
+
+	return { loaded, unloaded, unrecorded };
+}
+
 /** `tool_execution_end` 事件里与本判定相关的字段。 */
 export interface ReadEnd {
 	durationMs?: number;

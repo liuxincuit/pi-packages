@@ -7,6 +7,7 @@ import test from "node:test";
 import {
 	aggregate,
 	appendEvent,
+	buildStats,
 	explicitSkillPath,
 	isSkillFile,
 	normalizeSkillPath,
@@ -169,6 +170,67 @@ test("statsStart 取最早一条记录的时间", () => {
 
 test("statsStart 对空日志返回 undefined", () => {
 	assert.equal(statsStart([]), undefined);
+});
+
+test("buildStats 按 path 归一后把记录分到三段", () => {
+	const loaded = [{ name: "foo", filePath: "D:/s/foo/SKILL.md" }, { name: "bar", filePath: "D:/s/bar/SKILL.md" }];
+	const events = [ev(5, "foo"), ev(5, "ghost")];
+	const input = buildStats(events, loaded, NOW);
+	assert.deepEqual(input.loaded, [{ name: "foo", counts: [1, 1, 1, 1, 1], lastUsed: at(5) }]);
+	assert.deepEqual(input.unloaded.map((e) => e.name), ["ghost"]);
+	assert.deepEqual(input.unrecorded, ["bar"]);
+});
+
+test("buildStats 按 name 聚合不同来源的同名 skill", () => {
+	const events = [ev(5, "foo"), { ...ev(5, "foo"), path: "D:/other/foo/SKILL.md" }];
+	const input = buildStats(events, [], NOW);
+	assert.equal(input.unloaded.length, 1);
+	assert.equal(input.unloaded[0]!.counts[4], 2);
+});
+
+test("buildStats 按半年次数降序、同名按名排", () => {
+	const events = [ev(5, "b"), ev(5, "a"), ev(5, "a")];
+	assert.deepEqual(buildStats(events, [], NOW).unloaded.map((e) => e.name), ["a", "b"]);
+	// 次数与名字的次序相反，此时以次数为准：只看名字会给出 ["a", "b"]。
+	assert.deepEqual(buildStats([ev(5, "b"), ev(5, "b"), ev(5, "a")], [], NOW).unloaded.map((e) => e.name), ["b", "a"]);
+	// 次数相同才轮得到名字：插入顺序是 b 在前，结果必须是 a 在前。
+	assert.deepEqual(buildStats([ev(5, "b"), ev(5, "a"), ev(5, "c")], [], NOW).unloaded.map((e) => e.name), ["a", "b", "c"]);
+	// 排序主键是最长的半年窗口，不是任何一个更短的窗口：a 的两次都在 100 天前，
+	// 只落在半年窗口里，按 3 月及更短的窗口排都会把 b 排在前面。
+	const byHalfYear = buildStats([ev(5, "b"), ev(24 * 100, "a"), ev(24 * 100, "a")], [], NOW);
+	assert.deepEqual(
+		byHalfYear.unloaded.map((e) => [e.name, e.counts]),
+		[["a", [0, 0, 0, 0, 2]], ["b", [1, 1, 1, 1, 1]]],
+	);
+});
+
+test("buildStats 对已加载段也按半年次数降序", () => {
+	const loaded = [{ name: "a", filePath: "D:/s/a/SKILL.md" }, { name: "b", filePath: "D:/s/b/SKILL.md" }];
+	const input = buildStats([ev(5, "a"), ev(5, "b"), ev(5, "b")], loaded, NOW);
+	assert.deepEqual(input.loaded.map((e) => e.name), ["b", "a"]);
+});
+
+test("buildStats 在空日志时把全部已加载放进 unrecorded 并按名升序", () => {
+	const loaded = [{ name: "z", filePath: "D:/s/z/SKILL.md" }, { name: "a", filePath: "D:/s/a/SKILL.md" }];
+	const input = buildStats([], loaded, NOW);
+	assert.deepEqual(input.unrecorded, ["a", "z"]);
+	assert.deepEqual(input.loaded, []);
+	assert.deepEqual(input.unloaded, []);
+});
+
+// 匹配键与显示名是两件事：目录名用来配对，pi 的 name 只用来显示。
+// 目录名与 name 故意取不同值，按 name 配对或按目录名显示都会露馅。
+test("buildStats 用 SKILL.md 的父目录名配对、用 pi 的 name 显示", () => {
+	const loaded = [{ name: "pi-name", filePath: "D:/s/skill-dir/SKILL.md" }];
+	const recorded = buildStats([ev(5, "skill-dir")], loaded, NOW);
+	assert.deepEqual(recorded.loaded.map((e) => e.name), ["pi-name"]);
+	assert.deepEqual(recorded.unloaded, []);
+	assert.deepEqual(recorded.unrecorded, []);
+	// 反过来，这次调用记在别的目录下：同一个已加载 skill 不能因此算成两行。
+	const miss = buildStats([ev(5, "other-dir")], loaded, NOW);
+	assert.deepEqual(miss.loaded, []);
+	assert.deepEqual(miss.unloaded.map((e) => e.name), ["other-dir"]);
+	assert.deepEqual(miss.unrecorded, ["pi-name"]);
 });
 
 test("shouldCommitRead 只在真的执行且没出错时为真", () => {
