@@ -141,7 +141,7 @@ const HOUR_MS = 3_600_000;
 /** 一个月按 30 天算；不足一月不进入「个月前」的写法。 */
 const MONTH_DAYS = 30;
 
-/** 覆盖时长最长的窗口：起点比它更近时，该窗口的次数必然少于真实值。 */
+/** 覆盖时长最长的窗口：起点比它更近时，该窗口的次数可能少于真实值。 */
 const LONGEST_WINDOW = USAGE_WINDOWS.reduce((longest, window) => (window.hours > longest.hours ? window : longest));
 
 export interface StatsRenderOptions {
@@ -171,19 +171,24 @@ function padLeft(text: string, width: number): string {
 	return gap > 0 ? " ".repeat(gap) + text : text;
 }
 
+/** 补零到两位：`9` → `09`。 */
+const twoDigit = (value: number) => String(value).padStart(2, "0");
+
 /**
  * 统计起点标注：`统计自 <时间> 起`，起点距今短于最长窗口时补一句该窗口覆盖不完整。
  *
- * 短于最长窗口时，该窗口的次数必然少算：日志里 0 的含义是「自起点起没记录过」，
- * 而窗口没被覆盖满时连这一句都不成立，不说清楚用户会把 0 读成「从未使用」。
+ * 短于最长窗口时，该窗口没被日志覆盖满，次数可能少于真实值（未覆盖那段里没有调用时并不少算）：
+ * 日志里 0 的含义是「自起点起没记录过」，覆盖不全时连这一句都不成立，
+ * 不说清楚用户会把 0 读成「从未使用」。
  * 起点缺省（日志里没有任何可用记录）或无法解析时不输出该行。
  */
 function startLine(start: string | undefined, now: Date): string | undefined {
 	if (start === undefined) return undefined;
 	const time = Date.parse(start);
 	if (Number.isNaN(time)) return undefined;
-	// 用 UTC 的 `YYYY-MM-DD HH:MM`，不引入本机时区与 locale 依赖。
-	const shown = new Date(time).toISOString().slice(0, 16).replace("T", " ");
+	// 按本机时区显示：标注的读者是人，锚点应该是他自己的钟。
+	const moment = new Date(time);
+	const shown = `${moment.getFullYear()}-${twoDigit(moment.getMonth() + 1)}-${twoDigit(moment.getDate())} ${twoDigit(moment.getHours())}:${twoDigit(moment.getMinutes())}`;
 	if (now.getTime() - time >= LONGEST_WINDOW.hours * HOUR_MS) return `统计自 ${shown} 起`;
 	return `统计自 ${shown} 起（不足${LONGEST_WINDOW.label}，${LONGEST_WINDOW.label}窗口覆盖不完整）`;
 }

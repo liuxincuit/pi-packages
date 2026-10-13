@@ -254,15 +254,37 @@ const LONGEST_WINDOW_HOURS = Math.max(...USAGE_WINDOWS.map((window) => window.ho
 /** 输出最后一行：起点标注应该长在这里。 */
 const lastLine = (out: string) => out.split("\n").at(-1)!;
 
+/** 用本机时区把某一瞬间写成 `YYYY-MM-DD HH:MM`：与实现的取值逐位对齐。 */
+function localStamp(iso: string): string {
+	const date = new Date(Date.parse(iso));
+	const two = (value: number) => String(value).padStart(2, "0");
+	return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
 test("renderStats 标注统计起点，起点不足最长窗口时提示覆盖不完整", () => {
-	const out = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 30) });
-	// 起点按 UTC 的 `YYYY-MM-DD HH:MM` 显示：换成本机时区（这里 UTC+8）会写成 20:00，过不了。
-	assert.equal(lastLine(out), "统计自 2026-09-13 12:00 起（不足半年，半年窗口覆盖不完整）");
+	const start = at(24 * 30);
+	const out = renderStats(STATS_FIXTURE, { now: NOW, start });
+	// 形状不依赖 helper：只到日期（丢了时分）或换掉分隔符会在这里露馅；补零由下一条测试管。
+	assert.match(lastLine(out), /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起/);
+	// 标注按本机时区显示。本机 UTC+8：用 UTC 会写成 12:00（实际 20:00），这条就红；
+	// 在 UTC 机器上两种实现同值，也不可能靠这条区分——那是同一行为，无缺陷可抓。
+	assert.equal(lastLine(out), `统计自 ${localStamp(start)} 起（不足半年，半年窗口覆盖不完整）`);
+});
+
+test("renderStats 标注里的月与日是一位数时补零", () => {
+	// 这个瞬间在任何小时偏移下都落在 1 月 4 日或 5 日，月、日恒为一位数：
+	// 不补零会写成 `2026-1-5 …`，形状断言与逐字断言都会红。
+	// 上面两条的瞬间是整点，碰上补零的只有分钟 `0`；月、日的补零得靠这里。
+	const start = "2026-01-05T04:07:00.000Z";
+	const line = lastLine(renderStats(STATS_FIXTURE, { now: NOW, start }));
+	assert.match(line, /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起/);
+	assert.equal(line, `统计自 ${localStamp(start)} 起`);
 });
 
 test("renderStats 起点已覆盖最长窗口时不提示覆盖不完整", () => {
-	const out = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) });
-	assert.equal(lastLine(out), "统计自 2026-03-27 12:00 起");
+	const start = at(24 * 200);
+	const out = renderStats(STATS_FIXTURE, { now: NOW, start });
+	assert.equal(lastLine(out), `统计自 ${localStamp(start)} 起`);
 	// 只钉「统计自」不够：已覆盖半年时「不完整」一个字都不该出现，否则正是让用户误读 0 的那种文案。
 	assert.equal(out.includes("不完整"), false);
 });
@@ -277,9 +299,10 @@ test("renderStats 起点恰好等于最长窗口时算完整，早一小时才�
 });
 
 test("renderStats 无统计起点时不输出标注行", () => {
+	const start = at(24 * 200);
 	const withoutStart = renderStats(STATS_FIXTURE, { now: NOW });
-	const withStart = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) });
+	const withStart = renderStats(STATS_FIXTURE, { now: NOW, start });
 	assert.equal(withoutStart.includes("统计自"), false);
 	// 缺省起点时表体与有起点时逐字相同，只少掉尾部那一行：多印一个空行、或把标注挪到表头，都过不了。
-	assert.equal(withStart, `${withoutStart}\n统计自 2026-03-27 12:00 起`);
+	assert.equal(withStart, `${withoutStart}\n统计自 ${localStamp(start)} 起`);
 });
