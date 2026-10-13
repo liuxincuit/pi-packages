@@ -800,7 +800,8 @@ git commit -m "feat(skill-manager): 统计表数据组装与渲染"
 ```ts
 test("renderStats 空日志时三段只剩无记录段且不报错", () => {
 	const out = renderStats(buildStats([], [{ name: "a", filePath: "D:/s/a/SKILL.md" }], NOW), { now: NOW });
-	assert.doesNotMatch(out, /当前加载\b/);
+	// 不能用 /当前加载\b/：JS 的 \b 在两个 CJK 字符之间不成立，那段标题真被印出来也照样通过。
+	assert.equal(out.split("\n").some((l) => l.trim() === "当前加载"), false);
 	assert.match(out, /当前加载但无记录/);
 	assert.match(out, /a/);
 });
@@ -829,7 +830,11 @@ test("renderStats 对超长 skill 名截断且保持列对齐", () => {
 });
 
 test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
-	assert.equal(typeof renderStats({ loaded: [], unloaded: [], unrecorded: [] }, { now: NOW }), "string");
+	const out = renderStats({ loaded: [], unloaded: [], unrecorded: [] }, { now: NOW });
+	assert.equal(typeof out, "string");
+	// 不能只断言 typeof：空串也能过。实现返回的是一行提示，钉住它非空且不含表格头。
+	assert.equal(out.trim().length > 0, true);
+	assert.equal(out.includes("3天"), false);
 });
 ```
 
