@@ -9,6 +9,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
+import { completionsFor } from "./complete.ts";
 import { renderTable } from "./render.ts";
 import { readSkills, type SkillsContext } from "./skills.ts";
 import {
@@ -48,6 +49,17 @@ function loadLayers(ctx: ExtensionContext): {
 
 function skillsOf(ctx: ExtensionContext) {
 	return readSkills(ctx as unknown as SkillsContext);
+}
+
+/**
+ * 补全用的 skill 名缓存。
+ *
+ * getArgumentCompletions 拿不到 ctx，所以只能在会话建立、模型请求前与命令执行时刷新。
+ */
+let knownSkillNames: string[] = [];
+
+function refreshSkillNames(entries: Array<{ name: string }>): void {
+	if (entries.length > 0) knownSkillNames = entries.map((entry) => entry.name);
 }
 
 function renderCurrent(ctx: ExtensionContext): string {
@@ -97,12 +109,22 @@ async function applySetting(
 }
 
 export default function (pi: ExtensionAPI) {
+	// 补全缓存的首个来源：会话刚建立时系统提示里已经有 skill 段了。
+	pi.on("session_start", async (_event, ctx) => {
+		try {
+			refreshSkillNames(readSkills({ getSystemPrompt: () => ctx.getSystemPrompt() }));
+		} catch {
+			// 拿不到也不影响使用：模型请求前还会再刷一次。
+		}
+	});
+
 	pi.on("before_agent_start", async (event, ctx) => {
+		const skills = event.systemPromptOptions.skills;
+		if (Array.isArray(skills)) refreshSkillNames(skills);
+
 		const { session, project, global } = loadLayers(ctx);
 		const resolved = resolveSettings(session, project, global);
 		if (resolved.size === 0) return;
-
-		const skills = event.systemPromptOptions.skills;
 		if (!Array.isArray(skills)) return;
 
 		const kept = skills.filter((skill) => resolved.get(skill.name)?.value !== "disabled");
@@ -111,6 +133,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("skills", {
 		description: "查看 skill 清单，或切换某个 skill 的模型可见性",
+		getArgumentCompletions: (prefix: string) => {
+			const items = completionsFor(prefix, knownSkillNames);
+			return items.length > 0 ? items : null;
+		},
 		handler: async (args, ctx) => {
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const action = tokens[0] ?? "list";
@@ -129,6 +155,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				const known = skillsOf(ctx);
+				refreshSkillNames(known);
 				if (known.length > 0 && !known.some((entry) => entry.name === name)) {
 					ctx.ui.notify(`没有名为 ${name} 的 skill，未做改动。`, "warning");
 					return;

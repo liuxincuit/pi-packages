@@ -18,6 +18,8 @@
 /skills enable  <name> --global          启用并写入全局配置
 ```
 
+输入 `/skills` 后按 Tab 逐级补全：子命令 → skill 名 → 作用域 flag。
+
 列表输出：
 
 ```

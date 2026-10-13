@@ -14,6 +14,7 @@ pi 里 skill 的可用性目前只能靠三件事改变：删掉目录、改 `SK
 - 全局配置存 `<agentDir>/extensions/pi-skills/config.json`，项目配置存 `<cwd>/.pi/extensions/pi-skills/config.json`
 - 项目级配置仅在项目受信任时读取
 - 被禁用的 skill 仍可通过 `/skill:name` 显式调用；本 change 不改变命令注册，也不修改 skill 的发现逻辑
+- `/skills` 提供参数补全：子命令、skill 名、作用域 flag 三级提示
 
 ## Capabilities
 

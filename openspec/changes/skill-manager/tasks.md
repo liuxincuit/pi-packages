@@ -29,6 +29,10 @@
 - [x] 5.2 验证未受信任项目不读取项目配置；验证：`pi -p -na`（不信任项目）时项目级设定不生效，加 `-a` 后生效
 - [x] 5.3 将 `D:/code/pi-skills` 加入 `~/.pi/agent/settings.json` 的 `packages`，使扩展常驻可用（修改用户全局配置，执行前需用户确认）；验证：重启 pi 后 `/skills` 无需 `-e` 即可用
 
+## 6. 命令参数补全
+
+- [x] 6.1 把补全逻辑写成纯函数（子命令 / skill 名 / 作用域 flag 三级，返回项的 value 含完整参数串），并在 index.ts 接线；skill 名缓存从会话启动、每次模型请求与命令执行时刷新；验证：`node --test` 断言三级 prefix 的候选，以及在 TUI 里实测三级 Tab 补全
+
 ## Workflow follow-up
 
 - 归档本 change（`/opsx-archive`），归档后确认 `openspec/specs/skill-management/spec.md` 已生成且 Purpose 段落完整。
