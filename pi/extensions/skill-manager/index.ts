@@ -180,7 +180,7 @@ export default function (pi: ExtensionAPI) {
 				ts: new Date().toISOString(),
 				via: "read",
 				path: skillPath,
-				session: ctx.sessionManager.getSessionId(),
+				session: sessionKey(ctx),
 				cwd: ctx.cwd,
 			});
 		} catch {
@@ -260,12 +260,14 @@ export default function (pi: ExtensionAPI) {
 					const events = readEvents(usageLogPath(getAgentDir()));
 					const known = skillsOf(ctx);
 					refreshSkillNames(known);
+					// 窗口归属与「最后使用」都得以同一瞬间为参照，差一次取样就会互相矛盾。
+					const now = new Date();
 					const input = buildStats(
 						events,
 						known.map((entry) => ({ name: entry.name, filePath: entry.filePath })),
-						new Date(),
+						now,
 					);
-					ctx.ui.notify(renderStats(input, { now: new Date(), start: statsStart(events) }), "info");
+					ctx.ui.notify(renderStats(input, { now, start: statsStart(events) }), "info");
 				} catch {
 					ctx.ui.notify("统计读取失败。", "warning");
 				}
