@@ -3,6 +3,7 @@
  *
  * 本模块只依赖 node 标准库，不 import pi 运行时，因此可以用 `node --test` 直接运行。
  */
+import fs from "node:fs";
 import path from "node:path";
 
 /** 触达通道：模型读 SKILL.md 记为 read，用户 `/skill:` 显式调用记为 explicit。 */
@@ -87,4 +88,36 @@ export function parseEvent(line: string): UsageEvent | undefined {
 		session: event.session,
 		cwd: event.cwd,
 	};
+}
+
+/**
+ * 读取全部事件。文件不存在或不可读时返回空数组；
+ * 无法解析的行（含末尾未写完的截断行）被跳过，其余记录照常返回。
+ */
+export function readEvents(filePath: string): UsageEvent[] {
+	let text: string;
+	try {
+		text = fs.readFileSync(filePath, "utf8");
+	} catch {
+		return [];
+	}
+	const events: UsageEvent[] = [];
+	for (const line of text.split("\n")) {
+		const event = parseEvent(line);
+		if (event) events.push(event);
+	}
+	return events;
+}
+
+/**
+ * 追加一条事件。日志是尽力而为的旁路：
+ * 目录缺失时自动创建，任何写入失败都静默忽略，不向调用方抛错。
+ */
+export function appendEvent(filePath: string, event: UsageEvent): void {
+	try {
+		fs.mkdirSync(path.dirname(filePath), { recursive: true });
+		fs.appendFileSync(filePath, serializeEvent(event), "utf8");
+	} catch {
+		// 记不上就算了，技能本身照常工作。
+	}
 }
