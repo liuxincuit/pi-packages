@@ -5,6 +5,10 @@
 	"license": "MIT",
 	"keywords": ["pi-package"],
 	"files": ["pi"],
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org/",
+		"access": "public"
+	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
 	},
