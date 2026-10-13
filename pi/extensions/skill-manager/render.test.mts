@@ -4,7 +4,7 @@ import test from "node:test";
 import { displayWidth, isVisible, renderTable, renderStats, sourceLabel, statusLabel } from "./render.ts";
 import { resolveSettings } from "./scope.ts";
 import type { SkillEntry } from "./skills.ts";
-import { buildStats, type StatsEntry, type StatsInput } from "./usage.ts";
+import { buildStats, USAGE_WINDOWS, type StatsEntry, type StatsInput } from "./usage.ts";
 
 function entry(over: Partial<SkillEntry>): SkillEntry {
 	return {
@@ -246,4 +246,40 @@ test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
 	assert.equal(out.includes("3天"), false);
 	// 三段标题一个都不该出现：段里没有行就不该有段标题，三行光秃秃的标题同样过不了上面两条。
 	assert.deepEqual(titleLines(out), []);
+});
+
+/** 表中最长窗口的小时数（当前是半年的 4320）：起点贴着它时，覆盖完整与否会翻转。 */
+const LONGEST_WINDOW_HOURS = Math.max(...USAGE_WINDOWS.map((window) => window.hours));
+
+/** 输出最后一行：起点标注应该长在这里。 */
+const lastLine = (out: string) => out.split("\n").at(-1)!;
+
+test("renderStats 标注统计起点，起点不足最长窗口时提示覆盖不完整", () => {
+	const out = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 30) });
+	// 起点按 UTC 的 `YYYY-MM-DD HH:MM` 显示：换成本机时区（这里 UTC+8）会写成 20:00，过不了。
+	assert.equal(lastLine(out), "统计自 2026-09-13 12:00 起（不足半年，半年窗口覆盖不完整）");
+});
+
+test("renderStats 起点已覆盖最长窗口时不提示覆盖不完整", () => {
+	const out = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) });
+	assert.equal(lastLine(out), "统计自 2026-03-27 12:00 起");
+	// 只钉「统计自」不够：已覆盖半年时「不完整」一个字都不该出现，否则正是让用户误读 0 的那种文案。
+	assert.equal(out.includes("不完整"), false);
+});
+
+test("renderStats 起点恰好等于最长窗口时算完整，早一小时才提示不完整", () => {
+	// 窗口计数含 age == window 的调用，故起点恰在边界上时最长窗口仍是完整覆盖的。
+	const atBoundary = renderStats(STATS_FIXTURE, { now: NOW, start: at(LONGEST_WINDOW_HOURS) });
+	// 起点比最长窗口晚一小时就少算了一小时的数据，必须提示；窗口长度取错（例如取成 2160）会在这里露馅。
+	const oneHourShorter = renderStats(STATS_FIXTURE, { now: NOW, start: at(LONGEST_WINDOW_HOURS - 1) });
+	assert.equal(atBoundary.includes("不完整"), false);
+	assert.equal(oneHourShorter.includes("不完整"), true);
+});
+
+test("renderStats 无统计起点时不输出标注行", () => {
+	const withoutStart = renderStats(STATS_FIXTURE, { now: NOW });
+	const withStart = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) });
+	assert.equal(withoutStart.includes("统计自"), false);
+	// 缺省起点时表体与有起点时逐字相同，只少掉尾部那一行：多印一个空行、或把标注挪到表头，都过不了。
+	assert.equal(withStart, `${withoutStart}\n统计自 2026-03-27 12:00 起`);
 });
