@@ -111,15 +111,26 @@ test("aggregate 的窗口是累积的", () => {
 	assert.equal(m.get("foo")!.total, 5);
 });
 
+/** 把 `at(hoursAgo)` 那一刻改写成带偏移的字面量；`zone` 为负表示向西。 */
+const zoned = (hoursAgo: number, zone: number) =>
+	`${new Date(Date.parse(at(hoursAgo)) + zone * 3600_000).toISOString().slice(0, -1)}${zone < 0 ? "-" : "+"}${String(Math.abs(zone)).padStart(2, "0")}:00`;
+
 test("aggregate 的结果不随时间戳的时区写法变化", () => {
-	// 71 小时贴着 3 天窗口（72 小时）内沿：把时间戳按本地时区误解析会跨窗口。
-	const utc = ev(71, "foo");
-	// 同一时刻，但字面时间按 +08:00 写：解析后相等，字符串不等。
-	const shifted = { ...utc, ts: new Date(Date.parse(utc.ts) + 8 * 3600_000).toISOString().replace("Z", "+08:00") };
-	assert.notEqual(shifted.ts, utc.ts);
-	assert.equal(Date.parse(shifted.ts), Date.parse(utc.ts));
-	assert.deepEqual(aggregate([utc], NOW).get("foo")!.counts, [1, 1, 1, 1, 1]);
-	assert.deepEqual(aggregate([shifted], NOW).get("foo")!.counts, aggregate([utc], NOW).get("foo")!.counts);
+	// 三条探针贴住 3 天窗口（72 小时）的边界，期望值钉死：
+	// 1) 向西写的探针：把偏移丢掉、改按本机时区解析会被推出窗口（71 → 79 + 本机偏移）
+	// 2) 向东写的探针：同样的错会被拉进窗口（73 → 65 + 本机偏移）
+	//    1) 2) 的区间并起来覆盖任何本机偏移（含 UTC），不靠机器碰巧不在 UTC。
+	const justInside = { ...ev(71, "foo"), ts: zoned(71, -8) };
+	const justOutside = { ...ev(73, "foo"), ts: zoned(73, 8) };
+	// 3) 日志实际写出的 `Z` 写法：把 `Z` 丢给本机时区解析只在 UTC 以东的机器上可观测。
+	const zWritten = ev(71.5, "bar");
+	// 看门狗：钉住字面量，不构成对实现的覆盖。
+	assert.equal(justInside.ts, "2026-10-10T05:00:00.000-08:00");
+	assert.equal(justOutside.ts, "2026-10-10T19:00:00.000+08:00");
+	assert.equal(zWritten.ts, "2026-10-10T12:30:00.000Z");
+	assert.deepEqual(aggregate([justInside], NOW).get("foo")!.counts, [1, 1, 1, 1, 1]);
+	assert.deepEqual(aggregate([justOutside], NOW).get("foo")!.counts, [0, 1, 1, 1, 1]);
+	assert.deepEqual(aggregate([zWritten], NOW).get("bar")!.counts, [1, 1, 1, 1, 1]);
 });
 
 test("aggregate 记录最后使用时间", () => {
