@@ -141,9 +141,6 @@ const HOUR_MS = 3_600_000;
 /** 一个月按 30 天算；不足一月不进入「个月前」的写法。 */
 const MONTH_DAYS = 30;
 
-/** 覆盖时长最长的窗口：起点比它更近时，该窗口的次数可能少于真实值。 */
-const LONGEST_WINDOW = USAGE_WINDOWS.reduce((longest, window) => (window.hours > longest.hours ? window : longest));
-
 export interface StatsRenderOptions {
 	/** 当前时刻，用来算「最后使用」的距今时长。 */
 	now: Date;
@@ -175,11 +172,13 @@ function padLeft(text: string, width: number): string {
 const twoDigit = (value: number) => String(value).padStart(2, "0");
 
 /**
- * 统计起点标注：`统计自 <时间> 起`，起点距今短于最长窗口时补一句该窗口覆盖不完整。
+ * 统计起点标注：`统计自 <时间> 起`，起点比某些窗口更近时逐个点名这些窗口覆盖不完整。
  *
- * 短于最长窗口时，该窗口没被日志覆盖满，次数可能少于真实值（未覆盖那段里没有调用时并不少算）：
+ * 任何比日志年龄更长的窗口都没被覆盖满，其次数都可能少于真实值（未覆盖那段里没有调用时并不少算）：
  * 日志里 0 的含义是「自起点起没记录过」，覆盖不全时连这一句都不成立，
  * 不说清楚用户会把 0 读成「从未使用」。
+ * 只点名最长窗口是不够的：40 天前的起点同时让「3月」与「半年」覆盖不全，
+ * 而用户正是照着这两列判断「三个月没用了」——没被点名的那个窗口才是误导的来源。
  * 起点缺省（日志里没有任何可用记录）或无法解析时不输出该行。
  */
 function startLine(start: string | undefined, now: Date): string | undefined {
@@ -189,8 +188,11 @@ function startLine(start: string | undefined, now: Date): string | undefined {
 	// 按本机时区显示：标注的读者是人，锚点应该是他自己的钟。
 	const moment = new Date(time);
 	const shown = `${moment.getFullYear()}-${twoDigit(moment.getMonth() + 1)}-${twoDigit(moment.getDate())} ${twoDigit(moment.getHours())}:${twoDigit(moment.getMinutes())}`;
-	if (now.getTime() - time >= LONGEST_WINDOW.hours * HOUR_MS) return `统计自 ${shown} 起`;
-	return `统计自 ${shown} 起（不足${LONGEST_WINDOW.label}，${LONGEST_WINDOW.label}窗口覆盖不完整）`;
+	const covered = now.getTime() - time;
+	const partial = USAGE_WINDOWS.filter((window) => window.hours * HOUR_MS > covered).map((window) => window.label);
+	return partial.length === 0
+		? `统计自 ${shown} 起`
+		: `统计自 ${shown} 起（${partial.join("、")}窗口覆盖不完整）`;
 }
 
 /**
@@ -198,7 +200,8 @@ function startLine(start: string | undefined, now: Date): string | undefined {
  *
  * 名称列宽与五个数字列宽在三段之间统一算，数字列宽取该列表头与全部数字的较大者，
  * 这样同一列在「当前加载」与「当前未加载」两段里对齐。
- * 起点已知时，表尾再追加一行统计起点标注（见 `startLine`）。
+ * 起点已知时，表头之前先给一行统计起点标注（见 `startLine`）：
+ * 放在表尾的话，长表里盯着表头的读者根本看不到它。
  */
 export function renderStats(input: StatsInput, options: StatsRenderOptions): string {
 	const recorded = [...input.loaded, ...input.unloaded];
@@ -225,6 +228,6 @@ export function renderStats(input: StatsInput, options: StatsRenderOptions): str
 	if (input.unrecorded.length > 0) lines.push(SECTION_UNRECORDED, `  ${input.unrecorded.join("、")}`);
 
 	const body = lines.length > 0 ? lines.join("\n") : "没有可展示的统计。";
-	const footer = startLine(options.start, options.now);
-	return footer === undefined ? body : `${body}\n${footer}`;
+	const note = startLine(options.start, options.now);
+	return note === undefined ? body : `${note}\n${body}`;
 }

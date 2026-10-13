@@ -251,8 +251,8 @@ test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
 /** 表中最长窗口的小时数（当前是半年的 4320）：起点贴着它时，覆盖完整与否会翻转。 */
 const LONGEST_WINDOW_HOURS = Math.max(...USAGE_WINDOWS.map((window) => window.hours));
 
-/** 输出最后一行：起点标注应该长在这里。 */
-const lastLine = (out: string) => out.split("\n").at(-1)!;
+/** 输出第一行：统计起点标注应该长在这里，随段标题与表头一起可见。 */
+const noteLine = (out: string) => out.split("\n")[0]!;
 
 /** 用本机时区把某一瞬间写成 `YYYY-MM-DD HH:MM`：与实现的取值逐位对齐。 */
 function localStamp(iso: string): string {
@@ -261,14 +261,25 @@ function localStamp(iso: string): string {
 	return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
-test("renderStats 标注统计起点，起点不足最长窗口时提示覆盖不完整", () => {
-	const start = at(24 * 30);
+test("renderStats 标注统计起点，起点不足最长窗口时逐个点名覆盖不完整的窗口", () => {
+	// 10 天前的起点比「1月」「3月」「半年」都近：这三个窗口都没被覆盖满，都得点名。
+	const start = at(24 * 10);
 	const out = renderStats(STATS_FIXTURE, { now: NOW, start });
 	// 形状不依赖 helper：只到日期（丢了时分）或换掉分隔符会在这里露馅；补零由下一条测试管。
-	assert.match(lastLine(out), /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起/);
+	assert.match(noteLine(out), /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起/);
 	// 标注按本机时区显示。本机 UTC+8：用 UTC 会写成 12:00（实际 20:00），这条就红；
 	// 在 UTC 机器上两种实现同值，也不可能靠这条区分——那是同一行为，无缺陷可抓。
-	assert.equal(lastLine(out), `统计自 ${localStamp(start)} 起（不足半年，半年窗口覆盖不完整）`);
+	assert.equal(noteLine(out), `统计自 ${localStamp(start)} 起（1月、3月、半年窗口覆盖不完整）`);
+});
+
+test("renderStats 起点落在 3 月窗口内时，连带点名 3 月窗口", () => {
+	// 40 天前的起点仍在「3月」窗口的时间范围内：该窗口没被日志覆盖满，
+	// 只写最长窗口的话，用户会照着没被点名的「3月」列读出「三个月没用过」——正是这里要防的误读。
+	const start = at(24 * 40);
+	assert.equal(
+		noteLine(renderStats(STATS_FIXTURE, { now: NOW, start })),
+		`统计自 ${localStamp(start)} 起（3月、半年窗口覆盖不完整）`,
+	);
 });
 
 test("renderStats 标注里的月与日是一位数时补零", () => {
@@ -276,7 +287,7 @@ test("renderStats 标注里的月与日是一位数时补零", () => {
 	// 不补零会写成 `2026-1-5 …`，形状断言与逐字断言都会红。
 	// 上面两条的瞬间是整点，碰上补零的只有分钟 `0`；月、日的补零得靠这里。
 	const start = "2026-01-05T04:07:00.000Z";
-	const line = lastLine(renderStats(STATS_FIXTURE, { now: NOW, start }));
+	const line = noteLine(renderStats(STATS_FIXTURE, { now: NOW, start }));
 	assert.match(line, /^统计自 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 起/);
 	assert.equal(line, `统计自 ${localStamp(start)} 起`);
 });
@@ -284,7 +295,7 @@ test("renderStats 标注里的月与日是一位数时补零", () => {
 test("renderStats 起点已覆盖最长窗口时不提示覆盖不完整", () => {
 	const start = at(24 * 200);
 	const out = renderStats(STATS_FIXTURE, { now: NOW, start });
-	assert.equal(lastLine(out), `统计自 ${localStamp(start)} 起`);
+	assert.equal(noteLine(out), `统计自 ${localStamp(start)} 起`);
 	// 只钉「统计自」不够：已覆盖半年时「不完整」一个字都不该出现，否则正是让用户误读 0 的那种文案。
 	assert.equal(out.includes("不完整"), false);
 });
@@ -292,10 +303,19 @@ test("renderStats 起点已覆盖最长窗口时不提示覆盖不完整", () =>
 test("renderStats 起点恰好等于最长窗口时算完整，早一小时才提示不完整", () => {
 	// 窗口计数含 age == window 的调用，故起点恰在边界上时最长窗口仍是完整覆盖的。
 	const atBoundary = renderStats(STATS_FIXTURE, { now: NOW, start: at(LONGEST_WINDOW_HOURS) });
-	// 起点比最长窗口晚一小时就少算了一小时的数据，必须提示；窗口长度取错（例如取成 2160）会在这里露馅。
-	const oneHourShorter = renderStats(STATS_FIXTURE, { now: NOW, start: at(LONGEST_WINDOW_HOURS - 1) });
 	assert.equal(atBoundary.includes("不完整"), false);
-	assert.equal(oneHourShorter.includes("不完整"), true);
+	// 起点比最长窗口晚一小时就少算了一小时的数据，必须提示；窗口长度取错（例如取成 2160）会在这里露馅。
+	// 只差一小时，除「半年」之外没有别的窗口覆盖不全。
+	const start = at(LONGEST_WINDOW_HOURS - 1);
+	const oneHourShorter = renderStats(STATS_FIXTURE, { now: NOW, start });
+	assert.equal(noteLine(oneHourShorter), `统计自 ${localStamp(start)} 起（半年窗口覆盖不完整）`);
+});
+
+test("renderStats 的统计起点标注在段标题与表头之前", () => {
+	const lines = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) }).split("\n");
+	// 标注要跟表头一起可见：放在表尾时长表的读者看不到它。
+	assert.equal(lines[0]!.startsWith("统计自"), true);
+	assert.equal(lines[1], TITLES[0]);
 });
 
 test("renderStats 无统计起点时不输出标注行", () => {
@@ -303,6 +323,6 @@ test("renderStats 无统计起点时不输出标注行", () => {
 	const withoutStart = renderStats(STATS_FIXTURE, { now: NOW });
 	const withStart = renderStats(STATS_FIXTURE, { now: NOW, start });
 	assert.equal(withoutStart.includes("统计自"), false);
-	// 缺省起点时表体与有起点时逐字相同，只少掉尾部那一行：多印一个空行、或把标注挪到表头，都过不了。
-	assert.equal(withStart, `${withoutStart}\n统计自 ${localStamp(start)} 起`);
+	// 缺省起点时表体与有起点时逐字相同，只多出开头那一行：多印一个空行、或把标注挪到表尾，都过不了。
+	assert.equal(withStart, `统计自 ${localStamp(start)} 起\n${withoutStart}`);
 });
