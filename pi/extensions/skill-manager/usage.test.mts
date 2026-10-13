@@ -7,6 +7,7 @@ import test from "node:test";
 import {
 	aggregate,
 	appendEvent,
+	explicitSkillPath,
 	isSkillFile,
 	normalizeSkillPath,
 	parseEvent,
@@ -199,4 +200,40 @@ test("PendingReads clear 清空全部", () => {
 
 test("take 未记录过的 id 返回 undefined", () => {
 	assert.equal(new PendingReads().take("nope"), undefined);
+});
+
+const fakeParse = (text: string) =>
+	text.startsWith("<skill ") ? { location: "D:/s/foo/SKILL.md" } : null;
+
+test("explicitSkillPath 从 user 消息里取 location 并归一化", () => {
+	const msg = { role: "user", content: [{ type: "text", text: "<skill name=\"foo\" location=\"D:/s/foo/SKILL.md\">…</skill>" }] };
+	assert.equal(explicitSkillPath(msg, fakeParse, "D:/elsewhere"), "D:/s/foo/SKILL.md");
+});
+
+test("explicitSkillPath 对非 user 消息返回 undefined", () => {
+	assert.equal(explicitSkillPath({ role: "assistant", content: [{ type: "text", text: "<skill …" }] }, fakeParse, "D:/s"), undefined);
+});
+
+test("explicitSkillPath 的消息里没有 skill 块时返回 undefined", () => {
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "普通消息" }] }, fakeParse, "D:/s"), undefined);
+});
+
+test("explicitSkillPath 对解析失败、content 非数组、location 缺失都返回 undefined", () => {
+	assert.equal(explicitSkillPath({ role: "user", content: "字符串" }, fakeParse, "D:/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => null, "D:/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => ({}), "D:/s"), undefined);
+});
+
+test("explicitSkillPath 跳过非文本块与解析不出 location 的块，取后面那条命中", () => {
+	const content = [
+		{ type: "image", source: "…" },
+		{ type: "text", text: "先说点别的" },
+		{ type: "text", text: "<skill name=\"foo\" location=\"D:/s/foo/SKILL.md\">…</skill>" },
+	];
+	assert.equal(explicitSkillPath({ role: "user", content }, fakeParse, "D:/elsewhere"), "D:/s/foo/SKILL.md");
+});
+
+test("explicitSkillPath 用 cwd 展开相对路径的 location", () => {
+	const msg = { role: "user", content: [{ type: "text", text: "<skill relative>" }] };
+	assert.equal(explicitSkillPath(msg, () => ({ location: "skills/foo/SKILL.md" }), "D:/code"), "D:/code/skills/foo/SKILL.md");
 });

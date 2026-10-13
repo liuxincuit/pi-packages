@@ -227,3 +227,26 @@ export class PendingReads {
 		return this.paths.size;
 	}
 }
+
+/**
+ * explicit 通道的判据：user 消息里是否触发了 `/skill:<name>`，命中则给出归一化后的 SKILL.md 路径。
+ *
+ * `parse` 由调用方注入（生产代码传 pi 的 `parseSkillBlock`），本模块因此不必 import pi 运行时。
+ * 只认第一个能解出字符串 `location` 的文本块，其余情况（非 user、content 不是数组、没有 skill 块）
+ * 一律返回 undefined。
+ */
+export function explicitSkillPath(
+	message: { role?: unknown; content?: unknown },
+	parse: (text: string) => { location?: unknown } | null,
+	cwd: string,
+): string | undefined {
+	if (message.role !== "user" || !Array.isArray(message.content)) return undefined;
+	for (const block of message.content) {
+		const text = (block as { text?: unknown } | null)?.text;
+		if (typeof text !== "string") continue;
+		const location = parse(text)?.location;
+		if (typeof location !== "string") continue;
+		return normalizeSkillPath(location, cwd);
+	}
+	return undefined;
+}
