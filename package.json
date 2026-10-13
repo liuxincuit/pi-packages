@@ -1,0 +1,9 @@
+{
+	"name": "pi-skills",
+	"version": "0.1.0",
+	"private": true,
+	"description": "pi 扩展与技能集合",
+	"pi": {
+		"extensions": ["./pi/extensions"]
+	}
+}
