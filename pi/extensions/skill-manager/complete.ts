@@ -13,13 +13,14 @@ export interface CompletionItem {
 	description?: string;
 }
 
-const ACTIONS = ["list", "disable", "enable"];
+const ACTIONS = ["list", "disable", "enable", "stats"];
 const SCOPE_FLAGS = ["--project", "--global"];
 
 const ACTION_DESCRIPTIONS: Record<string, string> = {
 	list: "列出全部 skill",
 	disable: "禁用某个 skill",
 	enable: "启用某个 skill",
+	stats: "查看 skill 用量统计",
 };
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {

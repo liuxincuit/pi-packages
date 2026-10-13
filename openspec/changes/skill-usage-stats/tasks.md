@@ -29,7 +29,7 @@
 ## 5. 命令接线与补全
 
 - [x] 5.1 在 `index.ts` 的 `/skills` handler 增加 `stats` 分支，输出只走 `ctx.ui.notify`；验证：执行 `/skills stats` 后会话记录不新增消息条目，模型上下文内容不变
-- [ ] 5.2 在 `complete.ts` 的 ACTIONS 加入 `stats` 并补上描述，同步更新 `complete.test.mts` 的断言；`node --test` 通过，且 `/skills st` 的补全候选包含 `stats`
+- [x] 5.2 在 `complete.ts` 的 ACTIONS 加入 `stats` 并补上描述，同步更新 `complete.test.mts` 的断言；`node --test` 通过，且 `/skills st` 的补全候选包含 `stats`
 - [ ] 5.3 更新 README：命令表加入 `/skills stats`，行为边界段写明统计起点与不回填历史；确认 README 里出现的每条命令与实际行为一致
 - [ ] 5.4 用 pi 自己的 loader（`dist/core/extensions/loader.js` 的 `loadExtensions`）加载扩展入口，确认 `result.errors` 为空
 

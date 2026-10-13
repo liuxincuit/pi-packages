@@ -273,7 +273,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (action !== "list") {
-				ctx.ui.notify("用法：/skills [list | disable <name> | enable <name>] [--project | --global]", "warning");
+				ctx.ui.notify("用法：/skills [list | disable <name> | enable <name> | stats] [--project | --global]", "warning");
 				return;
 			}
 

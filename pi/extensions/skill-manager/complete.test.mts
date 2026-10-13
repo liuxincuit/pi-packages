@@ -8,7 +8,13 @@ const SKILLS = ["xlsx", "openspec-explore", "openspec-propose", "git-commit"];
 test("第一级补全子命令", () => {
 	assert.deepEqual(
 		completionsFor("", SKILLS).map((item) => item.value),
-		["list", "disable", "enable"],
+		["list", "disable", "enable", "stats"],
+	);
+	// ACTIONS 与 ACTION_DESCRIPTIONS 是两张平行的表，漏掉描述时 value 断言照样通过，
+	// 所以这里把每个子命令的描述一起钉住。
+	assert.deepEqual(
+		completionsFor("", SKILLS).map((item) => item.description),
+		["列出全部 skill", "禁用某个 skill", "启用某个 skill", "查看 skill 用量统计"],
 	);
 	assert.deepEqual(
 		completionsFor("d", SKILLS).map((item) => item.value),
@@ -19,6 +25,15 @@ test("第一级补全子命令", () => {
 		["enable"],
 	);
 	assert.deepEqual(completionsFor("zzz", SKILLS), []);
+});
+
+test("补全 stats 子命令", () => {
+	const items = completionsFor("st", SKILLS);
+	assert.deepEqual(
+		items.map((item) => item.value),
+		["stats"],
+	);
+	assert.equal(items[0].description, "查看 skill 用量统计");
 });
 
 test("第二级补全 skill 名，value 含完整参数串", () => {
@@ -50,6 +65,8 @@ test("参数已给全或动作不支持补全时不给候选", () => {
 	assert.deepEqual(completionsFor("disable xlsx --project ", SKILLS), []);
 	assert.deepEqual(completionsFor("list ", SKILLS), []);
 	assert.deepEqual(completionsFor("list x", SKILLS), []);
+	assert.deepEqual(completionsFor("stats ", SKILLS), []);
+	assert.deepEqual(completionsFor("stats --", SKILLS), []);
 });
 
 test("候选带描述", () => {
