@@ -4,7 +4,7 @@ import test from "node:test";
 import { displayWidth, isVisible, renderTable, renderStats, sourceLabel, statusLabel } from "./render.ts";
 import { resolveSettings } from "./scope.ts";
 import type { SkillEntry } from "./skills.ts";
-import type { StatsEntry, StatsInput } from "./usage.ts";
+import { buildStats, type StatsEntry, type StatsInput } from "./usage.ts";
 
 function entry(over: Partial<SkillEntry>): SkillEntry {
 	return {
@@ -199,4 +199,51 @@ test("renderStats 按 nameWidth 截断名称且数字列仍对齐", () => {
 	const narrowLines = renderStats(input, { now: NOW, nameWidth: 1 }).split("\n");
 	const narrowHeader = narrowLines.find((l) => l.includes("3天"))!;
 	assert.equal(cellAt(narrowLines.find((l) => l.includes("aaa"))!, firstCol(narrowHeader), 3).trim(), "1");
+});
+
+test("renderStats 空日志时三段只剩无记录段且不报错", () => {
+	const out = renderStats(buildStats([], [{ name: "a", filePath: "D:/s/a/SKILL.md" }], NOW), { now: NOW });
+	// 不能用 /当前加载\b/：JS 的 \b 在两个 CJK 字符之间不成立，那段标题真被印出来也照样通过。
+	assert.equal(out.split("\n").some((l) => l.trim() === "当前加载"), false);
+	assert.match(out, /当前加载但无记录/);
+	assert.match(out, /^ *a$/m);
+	// 有记录的两段都是空的，表头一次都不该出现：空段给不出任何数字，印表头就是空壳。
+	assert.equal(out.includes("3天"), false);
+});
+
+test("renderStats 幽灵超过一屏时不截断、不报错", () => {
+	const unloaded = Array.from({ length: 60 }, (_, i) => ({
+		name: `g${String(i).padStart(2, "0")}`,
+		counts: [0, 0, 0, 0, 1],
+		lastUsed: at(24 * 10),
+	}));
+	const out = renderStats({ loaded: [], unloaded, unrecorded: [] }, { now: NOW });
+	for (const e of unloaded) assert.equal(out.includes(e.name), true);
+	// 一个幽灵一行：挤成一行（例如按无记录段那样用顿号拼）会在这里露馅。
+	assert.equal(out.split("\n").filter((l) => unloaded.some((e) => l.includes(e.name))).length, 60);
+	assert.equal(out.split("\n").length >= 62, true); // 段标题 + 表头 + 60 行
+});
+
+test("renderStats 对超长 skill 名截断且保持列对齐", () => {
+	const long = { name: "x".repeat(60), counts: [0, 0, 0, 0, 3], lastUsed: at(24 * 10) };
+	const lines = renderStats({ loaded: [], unloaded: [long], unrecorded: [] }, { now: NOW, nameWidth: 20 }).split("\n");
+	const header = lines.find((l) => l.includes("3天"))!;
+	const row = lines.find((l) => l.includes("x"))!;
+	const col = (label: string) => displayWidth(header.slice(0, header.indexOf(label)));
+	// 名称列按 nameWidth 截到 20：19 个字符加省略号，溢出会顶歪后面所有列。
+	assert.equal(cellAt(row, 2, 20), `${"x".repeat(19)}…`);
+	// 列宽 = max(表头宽, 数据宽)；右对齐时个位数落在列的最后一格。
+	// 「3天」表头宽 3，个位数落在偏移 2，故取 3 宽已覆盖；「半年」表头宽 4，需取 4 宽。
+	assert.equal(cellAt(row, col("3天"), 3).trim(), "0");
+	assert.equal(cellAt(row, col("半年"), 4).trim(), "3");
+});
+
+test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
+	const out = renderStats({ loaded: [], unloaded: [], unrecorded: [] }, { now: NOW });
+	assert.equal(typeof out, "string");
+	// 不能只断言 typeof：空串也能过。实现返回的是一行提示，钉住它非空且不含表格头。
+	assert.equal(out.trim().length > 0, true);
+	assert.equal(out.includes("3天"), false);
+	// 三段标题一个都不该出现：段里没有行就不该有段标题，三行光秃秃的标题同样过不了上面两条。
+	assert.deepEqual(titleLines(out), []);
 });
