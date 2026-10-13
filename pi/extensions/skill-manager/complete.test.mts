@@ -66,7 +66,9 @@ test("参数已给全或动作不支持补全时不给候选", () => {
 	assert.deepEqual(completionsFor("list ", SKILLS), []);
 	assert.deepEqual(completionsFor("list x", SKILLS), []);
 	assert.deepEqual(completionsFor("stats ", SKILLS), []);
-	assert.deepEqual(completionsFor("stats --", SKILLS), []);
+	// 第三级要用「已经给了 skill 名」的输入来探：`stats --` 里的 `--` 自己就会让 flag 分支
+	// 不产出候选，区分不出「守卫拦住 stats」和「碰巧没有候选」。
+	assert.deepEqual(completionsFor("stats xlsx ", SKILLS), []);
 });
 
 test("候选带描述", () => {
