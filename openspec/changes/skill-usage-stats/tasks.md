@@ -13,7 +13,7 @@
 
 - [x] 2.1 在 `usage.ts` 实现按 toolCallId 的 pending 表与提交判定（`durationMs !== undefined && isError === false`）；单元测试覆盖成功提交、`isError` 为真不提交、`durationMs` 缺失不提交、end 无对应 start 时不提交四种情形
 - [x] 2.2 在 `index.ts` 注册 `tool_execution_start` 与 `tool_execution_end` 两个钩子，把 read + 以 `/SKILL.md` 结尾的调用写入日志；验证：让模型读取任一 SKILL.md 后 `cat <agentDir>/extensions/pi-skills/usage.jsonl`，出现一条 `"via":"read"` 且 path 为绝对路径、分隔符为 `/`
-- [ ] 2.3 在 `agent_end` 清空 pending 表；用 2.1 的接口断言连续多次调用后表中不残留未配对条目
+- [x] 2.3 在 `agent_end` 清空 pending 表；用 2.1 的接口断言连续多次调用后表中不残留未配对条目
 
 ## 3. 显式调用通道
 

@@ -40,12 +40,15 @@ import {
 const sessionSettings = new Map<string, SettingsMap>();
 
 /**
- * 已经开始、但还没结束的 read 调用，按 toolCallId 索引。
+ * 已经开始、但还没结束的 read 调用，按 sessionId 分桶，桶内按 toolCallId 索引。
  *
  * start 事件在工具执行之前发出，被拦下或没跑成的调用同样会留下条目，所以要在 end 时
  * 用 `shouldCommitRead` 复核。这里只存归一化后的 skill 路径，落盘交给 end。
+ *
+ * 分桶理由同 sessionSettings：共用一张表会让并发子代理的 toolCallId 撞在一起，
+ * 且任一会话的 agent_end 会清掉别的会话在途的条目。桶在该会话 agent_end 时整个丢弃。
  */
-const pendingReads = new PendingReads();
+const pendingBySession = new Map<string, PendingReads>();
 
 function sessionKey(ctx: ExtensionContext): string {
 	return ctx.sessionManager.getSessionId();
@@ -153,15 +156,20 @@ export default function (pi: ExtensionAPI) {
 			if (event.toolName !== "read") return;
 			const raw = (event.args as { path?: unknown } | undefined)?.path;
 			if (typeof raw !== "string" || !isSkillFile(raw)) return;
-			pendingReads.record(event.toolCallId, normalizeSkillPath(raw, ctx.cwd));
+			const key = sessionKey(ctx);
+			const pending = pendingBySession.get(key) ?? new PendingReads();
+			pendingBySession.set(key, pending);
+			pending.record(event.toolCallId, normalizeSkillPath(raw, ctx.cwd));
 		} catch {
-			// 采集是旁路：这里抛错会连带让这次工具调用失败。
+			// 采集是旁路：抛出去也只会进扩展错误日志（pi 给每个通知钩子各包了一层 try/catch），这里吞掉让它彻底静音。
 		}
 	});
 
 	pi.on("tool_execution_end", (event, ctx) => {
 		try {
-			const skillPath = pendingReads.take(event.toolCallId);
+			const pending = pendingBySession.get(sessionKey(ctx));
+			if (!pending) return;
+			const skillPath = pending.take(event.toolCallId);
 			if (!skillPath) return;
 			if (!shouldCommitRead({ durationMs: event.durationMs, isError: event.isError })) return;
 			appendEvent(usageLogPath(getAgentDir()), {
@@ -172,7 +180,18 @@ export default function (pi: ExtensionAPI) {
 				cwd: ctx.cwd,
 			});
 		} catch {
-			// 同上：记不上就算了，技能本身照常工作。
+			// 同上：抛出去也只会进扩展错误日志，这里吞掉让它彻底静音。
+		}
+	});
+
+	// 未配对的条目（被拦下、没跑成、或 end 事件没到）不该跨轮残留，逐轮清掉本会话的桶。
+	pi.on("agent_end", (_event, ctx) => {
+		try {
+			const key = sessionKey(ctx);
+			pendingBySession.get(key)?.clear();
+			pendingBySession.delete(key);
+		} catch {
+			// 同上：这里也吞掉。
 		}
 	});
 
