@@ -10,6 +10,7 @@
 
 ```
 /skills                                  列出全部 skill
+/skills stats                            查看 skill 用量统计
 /skills disable <name>                   禁用（默认只作用于当前会话）
 /skills enable  <name>                   启用（默认只作用于当前会话）
 /skills disable <name> --project         禁用并写入项目配置
@@ -65,6 +66,10 @@
   但 `/skill:<name>` 仍可显式调用
 - 开关在下一个模型请求生效，不需要 `/reload`
 - 会话层状态纯内存，且不随 `/tree` 分支切换回滚
+- 用量统计从本机日志的**最早一条记录**起算，不回填安装前的历史：
+  窗口里的 0 是「这段时间没有记录」，不等于「从未用过」
+- 日志在 `<agentDir>/extensions/pi-skills/usage.jsonl`，逐行追加；
+  删掉它统计即清空
 - `/skills` 的输出只进终端，不进入模型上下文
 
 ### 安装
