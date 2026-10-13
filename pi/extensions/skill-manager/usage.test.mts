@@ -219,7 +219,9 @@ test("explicitSkillPath 的消息里没有 skill 块时返回 undefined", () => 
 });
 
 test("explicitSkillPath 对解析失败、content 非数组、location 缺失都返回 undefined", () => {
-	assert.equal(explicitSkillPath({ role: "user", content: "字符串" }, fakeParse, "D:/s"), undefined);
+	// content 用非可迭代对象：字符串能被 for...of 逐字符遍历，"字符串" 这种输入恒过断言，
+	// 起不到钉住 Array.isArray 守卫的作用；对象则会抛 TypeError。
+	assert.equal(explicitSkillPath({ role: "user", content: { type: "text", text: "<skill " } }, fakeParse, "D:/s"), undefined);
 	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => null, "D:/s"), undefined);
 	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => ({}), "D:/s"), undefined);
 });
