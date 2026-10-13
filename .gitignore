@@ -1,2 +1,5 @@
 # pi 本地配置（prompts / skills / input-history）
 .pi/
+
+# 临时工作目录
+.tmp/
