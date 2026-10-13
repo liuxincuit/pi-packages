@@ -156,7 +156,7 @@ Expected: FAIL —— `isSkillFile is not a function`
 - [ ] **Step 3: 实现**
 
 `isSkillFile`：先把 `\` 换成 `/`，再判 `endsWith("/SKILL.md")`。
-`normalizeSkillPath`：`\` → `/`；判定是否绝对（以 `/` 开头，或第二个字符是 `:`）；相对则用 `posix.join(cwd, p)` 再 `posix.normpath`；绝对路径也走一次 `posix.normpath`。**不做大小写转换。**
+`normalizeSkillPath`：`\` → `/`；判定是否绝对（以 `/` 开头，或第二个字符是 `:`）；相对则用 `posix.join(cwd, p)` 再 `posix.normalize`；绝对路径也走一次 `posix.normalize`。**cwd 自身也要先做 `\` → `/`**，否则 Windows 的 `D:\code` 会拼出混用分隔符的路径。**不做大小写转换。**
 `skillNameOf`：按 `/` 切分后取倒数第二段。
 
 `import path from "node:path"` 已在 Task 1 引入；这里用 `path.posix`。
@@ -194,31 +194,38 @@ git commit -m "feat(skill-manager): 日志路径归一化"
 - [ ] **Step 1: 写失败测试**
 
 ```ts
+const E1 = { ts: "2026-10-13T01:00:00.000Z", via: "read" as const, path: "/a/one/SKILL.md", session: "s", cwd: "/a" } satisfies UsageEvent;
+const E2 = { ts: "2026-10-13T02:00:00.000Z", via: "read" as const, path: "/a/two/SKILL.md", session: "s", cwd: "/a" } satisfies UsageEvent;
+const tmpFile = (name = "log.jsonl") => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "usage-")), name);
+
 test("readEvents 对缺失文件、空文件返回空数组", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "usage-"));
-	assert.deepEqual(readEvents(path.join(dir, "nope.jsonl")), []);
-	const empty = path.join(dir, "empty.jsonl");
+	assert.deepEqual(readEvents(tmpFile("nope.jsonl")), []);
+	const empty = tmpFile("empty.jsonl");
 	fs.writeFileSync(empty, "");
 	assert.deepEqual(readEvents(empty), []);
 });
 
 test("readEvents 跳过坏行与末行截断，其余完整返回", () => {
-	const file = /* 临时文件 */;
+	const file = tmpFile();
 	fs.writeFileSync(file, [
-		serializeEvent(e1).trimEnd(),
+		serializeEvent(E1).trimEnd(),
 		"not json",
-		serializeEvent(e2).trimEnd(),
-		'{"ts":"2026-10-13T05:00:00.000Z","via":"read"',
-	].join("\n"));   // 末行故意不带换行，模拟写一半
-	assert.deepEqual(readEvents(file), [e1, e2]);
+		serializeEvent(E2).trimEnd(),
+		'{"ts":"2026-10-13T05:00:00.000Z","via":"read"',   // 末行截断，且无结尾换行
+	].join("\n"));
+	assert.deepEqual(readEvents(file), [E1, E2]);
 });
 
-test("appendEvent 在目录不存在时自动创建", () => { /* 断言追加两行后可读回两条 */ });
+test("appendEvent 在目录不存在时自动创建", () => {
+	const file = tmpFile("nested/log.jsonl");
+	assert.doesNotThrow(() => appendEvent(file, E1));
+	assert.deepEqual(readEvents(file), [E1]);
+});
 
 test("appendEvent 在写入失败时不抛异常", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "usage-"));
-	fs.mkdirSync(path.join(dir, "as-dir.jsonl"));
-	assert.doesNotThrow(() => appendEvent(path.join(dir, "as-dir.jsonl"), e1));
+	const file = tmpFile("as-dir.jsonl");
+	fs.mkdirSync(file);
+	assert.doesNotThrow(() => appendEvent(file, E1));
 });
 ```
 
@@ -721,8 +728,17 @@ Expected: FAIL —— `buildStats is not a function`
 - [ ] **Step 4: 写失败测试（render.ts 侧）**
 
 ```ts
+const STATS_FIXTURE: StatsInput = {
+	loaded: [{ name: "foo", counts: [1, 1, 1, 1, 1], lastUsed: at(2) }],
+	unloaded: [{ name: "ghost", counts: [0, 0, 0, 0, 1], lastUsed: at(24 * 100) }],
+	unrecorded: ["bar"],
+};
+
+/** 表头里「3天」的起始显示列。 */
+const firstCol = (header: string) => displayWidth(header.slice(0, header.indexOf("3天")));
+
 test("renderStats 输出三段标题与表头列", () => {
-	const out = renderStats(input, { now: NOW, start: at(100) });
+	const out = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) });
 	assert.match(out, /当前加载/);
 	assert.match(out, /当前未加载/);
 	assert.match(out, /当前加载但无记录/);
@@ -730,10 +746,15 @@ test("renderStats 输出三段标题与表头列", () => {
 	assert.match(out, /最后使用/);
 });
 
-test("renderStats 的窗口列按显示宽度对齐", () => { /* 取一行，按 cellAt 断言数字落在预期列区间 */ });
+test("renderStats 的数字列与表头同列对齐", () => {
+	const lines = renderStats(STATS_FIXTURE, { now: NOW, start: at(24 * 200) }).split("\n");
+	const header = lines.find((l) => l.includes("3天"))!;
+	assert.equal(cellAt(lines.find((l) => l.includes("foo"))!, firstCol(header), 3).trim(), "1");
+	assert.equal(cellAt(lines.find((l) => l.includes("ghost"))!, firstCol(header), 3).trim(), "0");
+});
 ```
 
-（`render.test.mts` 已有 `cellAt` 辅助函数，复用它。）
+（`render.test.mts` 已有 `cellAt`；本任务还需从 `render.ts` 导入 `displayWidth`、`renderStats`，从 `usage.ts` 导入 `StatsInput` 类型，并沿用 Task 4 测试里的 `NOW` / `at()` 写法。）
 
 - [ ] **Step 5: 运行确认失败**
 
@@ -785,13 +806,24 @@ test("renderStats 空日志时三段只剩无记录段且不报错", () => {
 });
 
 test("renderStats 幽灵超过一屏时不截断、不报错", () => {
-	/* 构造 60 个 unloaded 条目，断言输出行数 >= 63 且每行都出现 */
+	const unloaded = Array.from({ length: 60 }, (_, i) => ({
+		name: `g${String(i).padStart(2, "0")}`,
+		counts: [0, 0, 0, 0, 1],
+		lastUsed: at(24 * 10),
+	}));
+	const out = renderStats({ loaded: [], unloaded, unrecorded: [] }, { now: NOW });
+	for (const e of unloaded) assert.equal(out.includes(e.name), true);
+	assert.equal(out.split("\n").length >= 62, true);   // 段标题 + 表头 + 60 行
 });
 
 test("renderStats 对超长 skill 名截断且保持列对齐", () => {
-	const long = { name: "x".repeat(60), counts: [0, 0, 0, 0, 0] };
-	const out = renderStats({ loaded: [], unloaded: [long], unrecorded: [] }, { now: NOW, nameWidth: 20 });
-	/* 断言该行的数字列仍落在与表头一致的列区间 */
+	const long = { name: "x".repeat(60), counts: [0, 0, 0, 0, 3], lastUsed: at(24 * 10) };
+	const lines = renderStats({ loaded: [], unloaded: [long], unrecorded: [] }, { now: NOW, nameWidth: 20 }).split("\n");
+	const header = lines.find((l) => l.includes("3天"))!;
+	const row = lines.find((l) => l.includes("x"))!;
+	const col = (label: string) => displayWidth(header.slice(0, header.indexOf(label)));
+	assert.equal(cellAt(row, col("3天"), 3).trim(), "0");
+	assert.equal(cellAt(row, col("半年"), 3).trim(), "3");
 });
 
 test("renderStats 在全部段为空时返回一行提示而非崩溃", () => {
@@ -1055,9 +1087,9 @@ git commit -m "chore: 验证扩展在 pi loader 下零加载错误"
 
 Run: `/skills stats`
 
-Expected: 该 skill 在各窗口（含 3天）的计数均为 `1`，合计 `1`；最后使用为「今天」
+Expected: 该 skill 的五个窗口计数均为 `2`（两条通道各一条，按 name 聚合后为 2）；最后使用为「今天」。
 
-（注意：两条通道分别记一条，但因 name 聚合，同一 skill 的合计应为 2。若显示为 1，说明只有一条通道生效 —— 停止并报告。）
+**若显示为 1**：说明只有一条通道生效（read 或 explicit 其中一个），停止并报告是哪一个——不要自行改采集代码。
 
 - [ ] **Step 3: 提交并回写 checkbox**
 
