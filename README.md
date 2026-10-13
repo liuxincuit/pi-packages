@@ -89,7 +89,7 @@ pi -e <仓库路径>/pi/extensions/skill-manager/index.ts
 
 ### 开发
 
-纯逻辑模块（`skills.ts`、`scope.ts`、`render.ts`）不 import pi 运行时，可以直接跑测试：
+纯逻辑模块（`skills.ts`、`scope.ts`、`render.ts`、`usage.ts`、`complete.ts`）不 import pi 运行时，可以直接跑测试：
 
 ```bash
 node --test pi/extensions/skill-manager/*.test.mts
@@ -103,4 +103,6 @@ pi/extensions/skill-manager/
   skills.ts   清单读取：优先命令上下文的 getSystemPromptOptions()，降级解析系统提示
   scope.ts    三层配置的读写与合并
   render.ts   文本表渲染（按终端显示宽度对齐）
+  usage.ts    用量日志：事件序列化、路径归一化、窗口聚合
+  complete.ts 参数补全：/skills 的三级候选（子命令 → skill 名 → 作用域 flag）
 ```
