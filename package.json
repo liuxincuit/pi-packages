@@ -4,7 +4,7 @@
 	"description": "pi 扩展集合。提供 skill-manager：查看并分作用域管理 skill 的模型可见性，并按滚动窗口统计本机 skill 用量",
 	"license": "MIT",
 	"keywords": ["pi-package"],
-	"files": ["pi"],
+	"files": ["pi", "!**/*.test.mts"],
 	"publishConfig": {
 		"registry": "https://registry.npmjs.org/",
 		"access": "public"
