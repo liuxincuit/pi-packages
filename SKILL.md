@@ -30,6 +30,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 - **工具显隐是运行时状态**：`pi.setActiveTools()` 不写 session entry，`/tree` 切分支**不会**自动恢复。要按分支显示不同工具集，得在 `session_start` / `session_tree` 里自己重算（注意 `navigateTree` 之后新分支还没写标记，需要再同步一次）。
 - **注册 ≠ 声明给模型**：`direct`/`model-only` 工具**注册时默认激活**（reload 亦然），所以「默认禁用」有两种写法——老办法是在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉（每次都跑）；pi ≥0.99 更干净：注册时带 `defaultActive: false`，工具进注册表但不声明给模型，再用 `pi.setActiveTools()` 按需激活。没有注销 API，要撤回已注册的工具就**同名重新注册 + `exposure: "hidden"`**（内置 `codemode` / `tool-search` 就是这么控制自身暴露的）
 - **`tool_result` handler 里可以改活动集**：工具结果处理中调 `pi.setActiveTools()` 有效，改动在**下一个 turn** 生效（session 里表现为一条新的 system 消息带 `toolsAdded`/`toolsRemoved`）——所以「工具结果里发现某目录/某能力可用 → 注入 `<system-reminder>` + `notify` + 启用对应工具」能让模型在下一次请求里同时看到提示和工具。代价是请求前缀变了：对无法表达工具集变更的 provider，pi 会发完整 transcript checkpoint（缓存前缀失效），别在热路径上反复改
+- **同名覆盖在增量里表现为「同时在 added 和 removed」**：`/reload` 替换一个同名工具时，那条 system 消息里该名字会**同时**出现在 `toolsAdded` 和 `toolsRemoved`。想从 session JSONL 还原「当前有哪些工具」，必须**先应用 removed 再应用 added**；先加后删会把刚加上的又删掉（实测按错顺序把一个 11 工具集数成 10 个，并把新注册的 `web_search` 数没了）。
 
 这几条组合起来即完整的「阶段交接」模式：工具落盘一个待执行 entry → `agent_settled` 里派发内部命令 → 命令里切分支 + 注入 prompt，并按分支重算工具显隐。
 
@@ -37,42 +38,7 @@ pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 
 
 **版本对齐**：类型与 API 以实际运行的 pi 包为准——`pi --version` 看版本，`"$(npm root -g)/@earendil-works/pi-coding-agent"/dist/**/*.d.ts` 看类型定义。用新 API 前先确认该版本有对应字段，否则要么编译不过，要么被迫 cast 把真问题掩盖掉。
 
-**零安装路线**：pi 自带的 `node_modules` 里已经有 esbuild / typebox / jiti，直接引用，不必再建临时目录 `npm i`。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
-
-```bash
-PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"   # pi 包根目录
-
-mkdir -p .pi/T/ext-verify/node_modules
-ln -sfn "$PI_ROOT/node_modules/typebox" .pi/T/ext-verify/node_modules/typebox
-# 扩展入口用相对仓库根的路径，改 <name> 即可
-printf 'import ext from "../../../pi/extensions/<name>/index.ts";\nconsole.log(typeof ext);\n' > .pi/T/ext-verify/verify.ts
-
-node "$PI_ROOT/node_modules/esbuild/bin/esbuild" .pi/T/ext-verify/verify.ts \
-  --bundle --platform=node --format=esm \
-  --external:@earendil-works/* --external:typebox --outfile=.pi/T/ext-verify/out.mjs
-node .pi/T/ext-verify/out.mjs
-```
-
-`--external:typebox` 让打包跳过它，运行时由 verify 目录下的软链提供。
-
-**这个命令只对「import 全是 type-only」的扩展够用。** 如果扩展 import 了 pi-tui 的运行时值（`Editor`、`Key`、`matchesKey`、`Text`、`visibleWidth`、`wrapTextWithAnsi` 等），`--external:@earendil-works/*` 会让产物在 `node out.mjs` 时报 `Cannot find package '@earendil-works/pi-tui'`；把 pi-tui 也软链进去后，它的传递依赖（`marked`、`get-east-asian-width`…）会一个接一个地报，逐个软链是无底洞。此时改用 esbuild 的 JS API，一次把 `nodePaths` 带上：
-
-```js
-// .pi/T/ext-verify/build.cjs —— 用法：PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node build.cjs <entry.mjs> <out.mjs>
-const PI_ROOT = process.env.PI_ROOT;
-const esbuild = require(`${PI_ROOT}/node_modules/esbuild`);
-const [entry, outfile] = process.argv.slice(2);
-esbuild.buildSync({
-	entryPoints: [entry], bundle: true, platform: "node", format: "esm",
-	nodePaths: [`${PI_ROOT}/node_modules`],          // pi-tui 及其整条依赖都在 pi 自己的 node_modules 里
-	external: ["@earendil-works/pi-coding-agent"],   // 只留这一个：对它的 import 通常都是 type-only
-	outfile,
-});
-```
-
-`--node-paths` 是 JS API 专有选项，CLI 上不存在（写了只会报 `Invalid build flag`）。
-
-还要验证 **jiti 的真实加载路径**（入口里的 `import "./logic.js"` 指向 `logic.ts` 这类解析只有 jiti 认）：
+**零安装路线**：pi 自带的 `node_modules` 里有 typebox / jiti，**但 pi 1.3.0 起已没有 esbuild**（`pi-coding-agent/node_modules` 下只有 jiti，没有 `esbuild`）。因此走 **jiti 直接加载**，一次拿到「语法能解析 + import 路径有效 + 工厂不抛错 + 工具/handler 注册结果」四样，比旧版 esbuild 只验语法更有信息量。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
 
 ```js
 // .pi/T/ext-verify/jiticheck.cjs，用 `PI_ROOT="$PI_ROOT" node .pi/T/ext-verify/jiticheck.cjs` 跑
@@ -85,6 +51,23 @@ const jiti = createJiti(__filename, {
 });
 console.log(typeof jiti(`${__dirname}/../../../pi/extensions/<name>/index.ts`).default);
 ```
+
+`typebox` 的实际入口按它自己的 `exports` 走（`build/index.mjs`/`.cjs`/`.js` 三选一，存在即可），不要假设文件名。
+
+**只验语法也能用 esbuild（若环境里恰好有）**：装到 npm 顶层或其他目录时可以把 `package.json` 里的 esbuild 找出来，`--external:@earendil-works/* --external:typebox` 打包后 `node out.mjs` 跑一遍。但 pi 1.3.0 安装里没有，别再把它当默认路径——旧版这条命令会直接 `MODULE_NOT_FOUND`。
+
+**行为验证（验「execute 真跑起来」）**：jiti 加载后把 `pi` mock 成只收集 `registerTool` 的对象，就能拿到工具定义直接调 `execute`：
+
+```js
+// .pi/T/ext-verify/behavior.cjs
+const tools = new Map();
+jiti("<绝对路径>/pi/extensions/<name>/index.ts").default({ registerTool: (d) => tools.set(d.name, d) });
+const result = await tools.get("web_fetch").execute("id", { url: "..." }, undefined, undefined, {});
+```
+
+要**隔离 HOME 做配置态测试**（验「配置缺失 / 开关关闭」这类分支）时，光改 `HOME` 不够——Windows 上 `os.homedir()` 读的是 `USERPROFILE`，两个都得改，否则被测代码照旧读真实用户目录，测试看起来通过其实没隔离。
+
+**验证输出时不要从渲染文本反推结构化数据**：`renderResult` 出来的纯文本里可能夹着正文自带的 URL / 关键词，用正则提取来断言会得到自相矛盾的计数（实测把一个 20 条结果的调用数成 21 条）。要到数据层断言——直接调 `logic.ts` 的纯函数，或读 `details`。
 
 **最省事的一步是让 pi 自己加载全部扩展**——直接用 pi 的 loader 跑一遍，比逐个打包更能发现真问题（jiti 解析、import 路径失效、工厂抛错、handler 注册结果）。Windows 上绝对路径必须转成 `file://` URL，直接 `import()` 绝对路径会报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`：
 
@@ -191,7 +174,9 @@ console.log(execCalls.length, execCalls[0]);
 | 调用 bash 工具时传 `timeout: 150` 想限制 harness 调用 → 变成工具显式超时，命令按 150s 执行 | timeout 是工具参数；不传才走扩展默认值 |
 | 临时目录被 pi-permission-system 拦截 | 拦截原因是**路径在工作目录外**，不是命令模式。把临时目录建在工作目录内（如 `.pi/T/`），或先向用户说明；不要换命令绕过 |
 | 用 `readlink -f "$(command -v pi)"` 推导 PI_ROOT → 得到 `~/AppData` | npm 的 `pi.cmd` 包装没指向包目录，改用 `PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"` |
-| 扩展 import 了 pi-tui 运行时值，`--external:@earendil-works/*` 打包后 `node out.mjs` 报缺 pi-tui | 换 esbuild JS API + `nodePaths`，见「验证」 |
+| 按旧文档跑 `node "$PI_ROOT/node_modules/esbuild/bin/esbuild"` → `MODULE_NOT_FOUND` | pi 1.3.0 安装里**只有 jiti、没有 esbuild**。改用 jiti 直接加载扩展（见「验证」），不要再找 esbuild |
+| 隔离 HOME 测配置分支时只改 `HOME` → 被测代码仍读真实用户目录 | Windows 上 `os.homedir()` 读 `USERPROFILE`，两个都要改 |
+| 扩展 import 了 pi-tui 运行时值（`Text`、`Editor`…），打包后 `node out.mjs` 报缺 pi-tui | 不要打包——用 jiti 直接加载（它的 `alias` 把 pi-tui 指到 pi 自己的 `node_modules`），运行时依赖自然就在 |
 | 改完扩展不 /reload 就测试 | 不 reload 不生效 |
 | 在 spawnHook 里试图改 timeout | spawnHook 只能改 command/cwd/env，用 operations 包装 |
 | 在 pi 的 `dist/` 上 `grep -r` 找源码 → 命中 `dist/bundle/chunks/*.js`（esbuild 压缩产物，单行最大 3.9MB），一次喷出 50KB+ 输出 | 加 `--exclude-dir=bundle`——`dist/core/`、`dist/modes/` 下是格式化分文件，可正常 grep/sed；已命中 bundle 时用 `grep -oE ".{0,300}"` 限宽 |
