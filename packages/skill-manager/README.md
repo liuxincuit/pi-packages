@@ -83,7 +83,7 @@ pi 包名保留为 `@liuxincuit/pi-skills`。本包只包含 skill-manager 扩�
 
 ```json
 {
-	"packages": ["D:/code/pi-skills"]
+	"packages": ["<pi-skills 仓库路径>"]
 }
 ```
 

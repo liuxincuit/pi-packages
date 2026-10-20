@@ -50,10 +50,10 @@ test("isSkillFile 只认以 /SKILL.md 结尾的路径", () => {
 });
 
 test("normalizeSkillPath 把相对与反斜杠写法归一到同一结果", () => {
-	const abs = "D:/code/skills/skills/foo/SKILL.md";
-	assert.equal(normalizeSkillPath("D:\\code\\skills\\skills\\foo\\SKILL.md", "D:/code"), abs);
-	assert.equal(normalizeSkillPath("skills/foo/SKILL.md", "D:/code/skills"), abs);
-	assert.equal(normalizeSkillPath("./skills/foo/SKILL.md", "D:/code/skills"), abs);
+	const abs = "X:/code/skills/skills/foo/SKILL.md";
+	assert.equal(normalizeSkillPath("X:\\code\\skills\\skills\\foo\\SKILL.md", "X:/code"), abs);
+	assert.equal(normalizeSkillPath("skills/foo/SKILL.md", "X:/code/skills"), abs);
+	assert.equal(normalizeSkillPath("./skills/foo/SKILL.md", "X:/code/skills"), abs);
 	assert.equal(normalizeSkillPath(abs, "D:/elsewhere"), abs);
 	assert.equal(normalizeSkillPath(abs, ""), abs);
 });
@@ -63,7 +63,7 @@ test("normalizeSkillPath 不碰大小写", () => {
 });
 
 test("skillNameOf 取父目录名", () => {
-	assert.equal(skillNameOf("D:/code/skills/skills/foo/SKILL.md"), "foo");
+	assert.equal(skillNameOf("X:/code/skills/skills/foo/SKILL.md"), "foo");
 });
 
 const E1 = { ts: "2026-10-13T01:00:00.000Z", via: "read" as const, path: "/a/one/SKILL.md", session: "s", cwd: "/a" } satisfies UsageEvent;
@@ -299,5 +299,5 @@ test("explicitSkillPath 跳过非文本块与解析不出 location 的块，取�
 
 test("explicitSkillPath 用 cwd 展开相对路径的 location", () => {
 	const msg = { role: "user", content: [{ type: "text", text: "<skill relative>" }] };
-	assert.equal(explicitSkillPath(msg, () => ({ location: "skills/foo/SKILL.md" }), "D:/code"), "D:/code/skills/foo/SKILL.md");
+	assert.equal(explicitSkillPath(msg, () => ({ location: "skills/foo/SKILL.md" }), "X:/code"), "X:/code/skills/foo/SKILL.md");
 });
