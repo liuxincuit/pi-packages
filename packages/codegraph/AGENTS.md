@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-本仓库是 pi（`@earendil-works/pi-coding-agent`）的 CodeGraph 集成插件：通过 `codegraph_explore` 工具和若干 `/codegraph-*` 命令，让 agent 能查询 CodeGraph 索引（符号源码与调用路径）。fork 自 `izhimu/pi-codegraph`。
+本包位于 `pi-packages` monorepo 的 `packages/codegraph`，是 pi（`@earendil-works/pi-coding-agent`）的 CodeGraph 集成插件：通过 `codegraph_explore` 工具和若干 `/codegraph-*` 命令，让 agent 能查询 CodeGraph 索引（符号源码与调用路径）。fork 自 `izhimu/pi-codegraph`。
 
 ## 项目结构与模块组织
 
@@ -16,7 +16,7 @@ package.json              # pi 包清单；files 白名单决定发布内容
 ## 构建、测试与开发命令
 
 ```bash
-npm install          # 安装依赖（peer: @earendil-works/pi-coding-agent）
+# npm install 在仓库根执行（workspace 模式），包内命令可直接跑
 npm run typecheck    # tsc --noEmit，类型检查
 npm run smoke        # 编译扩展并对 mock pi 运行冒烟测试（需 codegraph CLI 在 PATH）
 pi -e ./extensions/codegraph.ts   # 不安装直接试运行扩展

@@ -1,6 +1,6 @@
 # pi-skills
 
-给 pi 用的扩展集合。
+pi 包名保留为 `@liuxincuit/pi-skills`。本包只包含 skill-manager 扩展。
 
 ## skill-manager
 
