@@ -31,6 +31,9 @@
 	"pi": {
 		"extensions": [
 			"./extensions"
+		],
+		"skills": [
+			"./skills"
 		]
 	},
 	"files": [
