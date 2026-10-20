@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-subdir-context",
+  "version": "0.1.0",
+  "private": true,
+  "description": "读取文件时自动加载该文件所在子目录的 AGENTS.md",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

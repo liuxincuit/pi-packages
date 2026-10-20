@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-rules-context",
+  "version": "0.1.0",
+  "private": true,
+  "description": "按文件路径注入规则",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

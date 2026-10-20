@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-fix-nul-redirect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把 bash 命令里的 > /dev/null 改写成 > /dev/null",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

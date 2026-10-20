@@ -1,0 +1,24 @@
+{
+  "name": "@liuxincuit/pi-deepseek-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "用 DeepSeek Search/Fetch API 提供 web_search 与 web_fetch",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "api.ts",
+    "config.ts",
+    "logic.ts",
+    "README.md"
+  ]
+}

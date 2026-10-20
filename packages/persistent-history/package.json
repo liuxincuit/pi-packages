@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-persistent-history",
+  "version": "0.1.0",
+  "private": true,
+  "description": "跨 /reload、/new 和新会话保留输入历史",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

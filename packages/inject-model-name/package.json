@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-inject-model-name",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把当前模型名注入系统提示",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

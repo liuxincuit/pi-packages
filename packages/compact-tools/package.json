@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-compact-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "覆盖内置 read/bash/edit/write，提供紧凑渲染与默认超时",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}

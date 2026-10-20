@@ -1,0 +1,23 @@
+{
+  "name": "@liuxincuit/pi-tree-summaries",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把干活、回到会话树开头、留下上下文做成可配置预设",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "logic.ts",
+    "builtin/",
+    "README.md"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@liuxincuit/pi-ask-user-question",
+  "version": "0.1.0",
+  "private": true,
+  "description": "让模型把选择题交给用户，而不是自己猜",
+  "keywords": [
+    "pi-package"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ]
+}
