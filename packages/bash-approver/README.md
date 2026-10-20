@@ -2,6 +2,24 @@
 
 自动批准 pi-permission-system 对 bash 命令的询问，免掉弹窗。
 
+## 安装
+
+```bash
+pi install npm:@gotgenes/pi-permission-system
+pi install npm:@liuxincuit/pi-bash-approver
+```
+
+装完还要在 pi-permission-system 的 `config.json` 里把 `bash-approver` 加进 `authorizerChain`，否则本扩展注册了也不生效（见下节）。没有 permission-system 时它不报错，但什么也不做。
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/bash-approver
+```
+
 ## 做什么
 
 pi-permission-system 对包装器命令（`sudo`、`env`、`xargs`、`bash -c`、`eval` 等）有 fail-closed 设计：即使配了 `"bash": { "*": "allow" }`，这些命令的 allow 也会被强制提升为 ask 并弹窗，且没有配置项能关掉。

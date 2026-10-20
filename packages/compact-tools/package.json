@@ -1,13 +1,23 @@
 {
   "name": "@liuxincuit/pi-compact-tools",
   "version": "0.1.0",
-  "private": true,
   "description": "覆盖内置 read/bash/edit/write，提供紧凑渲染与默认超时",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "renderer",
+    "compact",
+    "tui"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/compact-tools"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "pi": {
     "extensions": [
@@ -16,6 +26,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

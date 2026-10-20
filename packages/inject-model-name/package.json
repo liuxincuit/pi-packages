@@ -1,11 +1,19 @@
 {
   "name": "@liuxincuit/pi-inject-model-name",
   "version": "0.1.0",
-  "private": true,
   "description": "把当前模型名注入系统提示",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "system-prompt",
+    "model"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/inject-model-name"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
@@ -16,6 +24,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

@@ -8,12 +8,12 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 |---|---|---|---|
 | `@liuxincuit/pi-ask-user-question` | `packages/ask-user-question` | 让模型把选择题交给用户 | 已发布 0.1.0 |
 | `@liuxincuit/pi-auto-prepend` | `packages/auto-prepend` | 每 N 轮注入一条自定义消息 | 未发布 |
-| `@liuxincuit/pi-bash-approver` | `packages/bash-approver` | 自动批准 bash 命令的权限询问 | 未发布 |
-| `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 未发布 |
+| `@liuxincuit/pi-bash-approver` | `packages/bash-approver` | 自动批准 bash 命令的权限询问 | 已发布 0.1.0 |
+| `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 已发布 0.1.0 |
 | `@liuxincuit/pi-costtime` | `packages/costtime` | working 行显示每轮耗时 | 已发布 0.1.0 |
 | `@liuxincuit/pi-deepseek-web` | `packages/deepseek-web` | DeepSeek 的 `web_search` / `web_fetch` | 已发布 0.1.0 |
-| `@liuxincuit/pi-fix-nul-redirect` | `packages/fix-nul-redirect` | 把 `> nul` 改写为 `> /dev/null` | 未发布 |
-| `@liuxincuit/pi-inject-model-name` | `packages/inject-model-name` | 把当前模型名注入系统提示 | 未发布 |
+| `@liuxincuit/pi-fix-nul-redirect` | `packages/fix-nul-redirect` | 把 `> nul` 改写为 `> /dev/null` | 已发布 0.1.0 |
+| `@liuxincuit/pi-inject-model-name` | `packages/inject-model-name` | 把当前模型名注入系统提示 | 已发布 0.1.0 |
 | `@liuxincuit/pi-model-profiles` | `packages/model-profiles` | `/profile` 档案切换 | 未发布 |
 | `@liuxincuit/pi-notify-on-reply` | `packages/notify-on-reply` | Windows 回复通知 | 未发布 |
 | `@liuxincuit/pi-persistent-history` | `packages/persistent-history` | 跨会话保留输入历史 | 未发布 |

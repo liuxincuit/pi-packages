@@ -2,6 +2,21 @@
 
 把当前模型名注入系统提示。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-inject-model-name
+```
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/inject-model-name
+```
+
 ## 做什么
 
 在 `before_agent_start` 时把 `\n\n当前模型: <model.id>` 追加到 `systemPrompt`，让模型知道自己正跑在哪个模型上。

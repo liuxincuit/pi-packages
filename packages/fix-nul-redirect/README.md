@@ -2,6 +2,21 @@
 
 把 bash 命令里的 `> nul` 重定向改写成 `> /dev/null`。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-fix-nul-redirect
+```
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/fix-nul-redirect
+```
+
 ## 做什么
 
 拦截 `tool_call` 事件里的 bash 命令，把 Windows 风格的空设备重定向改写掉。

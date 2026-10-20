@@ -1,11 +1,21 @@
 {
   "name": "@liuxincuit/pi-fix-nul-redirect",
   "version": "0.1.0",
-  "private": true,
-  "description": "把 bash 命令里的 > /dev/null 改写成 > /dev/null",
+  "description": "把 bash 命令里的 > nul 改写成 > /dev/null",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "windows",
+    "msys2",
+    "nul",
+    "bash"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/fix-nul-redirect"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
@@ -16,6 +26,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

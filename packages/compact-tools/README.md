@@ -2,6 +2,23 @@
 
 覆盖内置的 `read` / `bash` / `edit` / `write` 四个工具，换成自绘的紧凑渲染；顺带给 bash 注入默认超时与 `.env` 环境。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-compact-tools
+```
+
+`@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+注意它不只改渲染，还会改 bash 的行为：默认 120 秒超时、注入 `~/.pi/agent/.env`、移除代理变量。细节与理由见下节。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/compact-tools
+```
+
 ## 做什么
 
 - **紧凑渲染**：四个工具改为 `renderShell: "self"`，自绘调用行与结果行。成功命令无输出时折叠成一行，失败或展开时才铺开全文。执行期间用 spinner + 耗时提示（按 `toolCallId` 分别计状态，并发工具互不干扰）。
