@@ -1,0 +1,7 @@
+node_modules/
+.smoke-build/
+*.tgz
+package/
+.codegraph/
+.pi/
+.tmp/

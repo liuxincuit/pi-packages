@@ -1,0 +1,145 @@
+# pi-codegraph
+
+> 本仓库 fork 自 [izhimu/pi-codegraph](https://github.com/izhimu/pi-codegraph)，原作者版权信息见 [LICENSE](LICENSE)。
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![pi extension](https://img.shields.io/badge/pi-extension-green.svg)](https://github.com/earendil-works/pi)
+
+为 [pi](https://github.com/earendil-works/pi) 提供 [CodeGraph](https://github.com/colbymchenry/codegraph) 支持：智能体将获得一个 `codegraph_explore` 工具——一次查询即可返回相关符号逐字、带行号的源码，以及它们之间的调用路径。
+
+## 环境要求
+
+`PATH` 中需要存在 `codegraph` CLI：
+
+```bash
+npm i -g @colbymchenry/codegraph
+```
+
+未检测到 CLI 时，插件**不会注入任何工具、命令或技能**（`codegraph_explore`、`/codegraph-*`、CodeGraph 技能均不加载），仅在会话开始时弹出一条安装提示；安装后 `/reload` 或重启 pi 即恢复全部功能。
+
+## 安装
+
+### npm（推荐）
+
+```bash
+pi install @liuxincuit/pi-codegraph
+```
+
+### 从 Git 安装
+
+```bash
+# 全局安装
+pi install git:github.com/liuxincuit/pi-codegraph
+
+# 项目本地安装（通过 .pi/settings.json 与团队共享）
+pi install git:github.com/liuxincuit/pi-codegraph -l
+```
+
+### 从本地路径安装
+
+```bash
+pi install /path/to/pi-codegraph
+```
+
+### 快速测试（无需安装）
+
+```bash
+pi -e ./extensions/codegraph.ts
+```
+
+## 功能一览
+
+- **`codegraph_*` 工具集** — 面向智能体的代码智能工具，均支持 `path` 参数查询其他已建索引的项目：
+  - `codegraph_explore`（**默认注册**）— 一揽子探索：相关符号逐字源码 + 调用路径 + 影响范围（`maxFiles` 限制返回行数）
+  - `codegraph_query` / `codegraph_node` / `codegraph_callers` / `codegraph_callees` / `codegraph_impact` / `codegraph_files`（**默认隐藏**，见下方配置）
+- **工具可用性按需判定** — 只有工作目录已建索引（或本会话探索到了某个已建索引的目录）时，工具才会出现在系统提示里；跨目录探索到索引目录时会即时注入提示，并在 TUI / RPC 弹出通知（见 `docs/adr/0004`）。
+- **`/codegraph-init [path]`** — 为项目建立索引（`codegraph init`）。
+- **`/codegraph-sync [path]`** — 手动同步自上次索引以来的改动（`codegraph sync`）。
+- **`/codegraph-status [path]`** — 查看索引状态与统计信息（`codegraph status`）。
+- **`/codegraph-unlock [path]`** — 守护进程崩溃后释放过期的数据库锁（`codegraph unlock`）。
+- **会话开始时自动同步** — 每个会话自动执行一次 `codegraph sync -q`，确保索引反映你最近的编辑。
+
+## 使用方法
+
+像往常一样提出结构性问题即可——项目建立索引后，智能体会优先调用 `codegraph_explore`：
+
+- "会话加载是如何工作的？"
+- "如果我修改 `ExtensionRunner.emit`，会破坏什么？"
+
+在新项目中第一次使用 pi 时，请先手动建立一次索引：
+
+```
+/codegraph-init
+```
+
+索引构建始终由你显式触发——智能体自身不会运行 `codegraph init`（见 `docs/adr/0002`）。
+
+## 工具何时可用
+
+工具出现在系统提示里需要满足下面任一条件（详见 `docs/adr/0004`）：
+
+1. **工作目录已建索引** — 默认情况，`codegraph_*` 可用，提示词告知项目已建索引。
+2. **探索到其他已建索引的目录** — 例如在 `/a` 启动 pi，让智能体读 `/b` 下的文件；发现 `/b/.codegraph/` 后，工具会立即被声明，并把提示追加到那次工具结果里，同时在 TUI 弹出“发现 CodeGraph 索引: /b”。每个索引目录每会话只提示一次。
+3. **配置 `inject: "always"`** — 无论工作目录有没有索引都声明工具，便于长期在 monorepo 根目录使用。
+
+工作目录没有索引、也没探索到索引时，`codegraph_*` **不会出现**在工具列表里，也不会注入任何提示——绝不会宣传调不到的工具。用 `/codegraph-init` 建好索引后，当前会话会立即启用并补上提示。
+
+## 细粒度工具（可选开启）
+
+`codegraph_explore` 能覆盖绝大多数结构化查询，因此另外 6 个细粒度工具默认**不注册**，避免过多工具增加智能体的决策负担（见 `docs/adr/0003`）。需要时在全局 `~/.pi/agent/extensions/pi-codegraph/config.json` 或项目 `.pi/extensions/pi-codegraph/config.json` 中配置（项目配置覆盖全局，仅对受信任项目生效）：
+
+```json
+{
+  "extraTools": ["query", "node", "impact"],
+  "inject": "auto"
+}
+```
+
+- `extraTools`：短名（`node`、`impact`）与完整工具名（`codegraph_node`）均可用，`"all"` 开启全部。
+- `inject`：`"auto"`（默认，按上方“工具何时可用”判定）或 `"always"`（无条件声明工具）。
+
+配置在下一个会话生效（`/reload` 或重启 pi）。
+
+## 工作原理
+
+pi 原生不支持 MCP，因此本扩展通过执行 CLI 来桥接 CodeGraph——`codegraph explore` 产生与 `codegraph_explore` MCP 工具相同的输出（见 `docs/adr/0001`）。每次工具调用仅需一次 `pi.exec`：没有守护进程、没有 JSON-RPC，没有可泄漏或需要恢复的状态。
+
+`skills/codegraph/` 下的 `SKILL.md` 会被 pi 的技能系统自动发现，用于指导智能体在何种情况下优先使用该工具而非 grep/read；只有在工具确实可用（gate 为真）的会话里才会注入。
+
+## 项目结构
+
+```
+pi-codegraph/
+├── extensions/
+│   └── codegraph.ts      # pi ExtensionAPI 集成
+├── skills/
+│   └── codegraph/
+│       └── SKILL.md      # codegraph_explore 的智能体使用指南
+├── docs/adr/             # 设计决策记录
+├── CONTEXT.md            # 领域术语表
+├── package.json          # pi 包清单
+├── tsconfig.json
+├── LICENSE
+└── README.md
+```
+
+## 开发
+
+```bash
+npm install
+npm run typecheck
+```
+
+## 贡献
+
+欢迎提交贡献！请：
+
+1. Fork 本仓库
+2. 新建功能分支（`git checkout -b feat/amazing-feature`）
+3. 提交改动（`git commit -m 'feat: add amazing feature'`）
+4. 推送到分支（`git push origin feat/amazing-feature`）
+5. 发起 Pull Request
+
+## License
+
+[MIT](LICENSE) © [liuxincuit](https://github.com/liuxincuit)，fork 自 [izhimu/pi-codegraph](https://github.com/izhimu/pi-codegraph)。

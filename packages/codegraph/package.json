@@ -1,0 +1,43 @@
+{
+	"name": "@liuxincuit/pi-codegraph",
+	"version": "0.2.0",
+	"description": "CodeGraph support for pi — symbol source + call paths via the codegraph CLI",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"codegraph",
+		"code-intelligence",
+		"knowledge-graph"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/liuxincuit/pi-codegraph.git"
+	},
+	"author": "liuxincuit",
+	"license": "MIT",
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.99.1",
+		"@types/node": "^22.0.0",
+		"typebox": "^1.3.7",
+		"typescript": "^5.5.0"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"smoke": "tsc extensions/codegraph.ts --outDir .smoke-build --module esnext --target es2022 --moduleResolution bundler --skipLibCheck --noEmit false && node smoke.mjs"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions"
+		]
+	},
+	"files": [
+		"extensions/",
+		"skills/",
+		"CONTEXT.md",
+		"README.md",
+		"LICENSE"
+	]
+}
