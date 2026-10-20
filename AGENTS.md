@@ -12,7 +12,7 @@ packages/                 # 每个子目录是一个独立 pi 包
   skill-manager/          # @liuxincuit/pi-skills，保持原仓库布局
   prompts/                # @liuxincuit/pi-prompts，只有提示词模板
 attic/next-phase/         # 停用扩展，不是包、不参与加载
-docs/openspec/            # skill-manager 的历史设计与规格
+openspec/                 # OpenSpec 规格与变更记录（必须在仓库根）
 package.json              # workspaces 根，private，不声明 pi 字段
 ```
 
