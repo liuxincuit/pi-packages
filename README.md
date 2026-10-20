@@ -12,7 +12,6 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 | `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 未发布 |
 | `@liuxincuit/pi-costtime` | `packages/costtime` | working 行显示每轮耗时 | 未发布 |
 | `@liuxincuit/pi-deepseek-web` | `packages/deepseek-web` | DeepSeek 的 `web_search` / `web_fetch` | 未发布 |
-| `@liuxincuit/pi-extension-dev` | `packages/extension-dev` | pi 扩展开发与验证参考 | 未发布 |
 | `@liuxincuit/pi-fix-nul-redirect` | `packages/fix-nul-redirect` | 把 `> nul` 改写为 `> /dev/null` | 未发布 |
 | `@liuxincuit/pi-inject-model-name` | `packages/inject-model-name` | 把当前模型名注入系统提示 | 未发布 |
 | `@liuxincuit/pi-model-profiles` | `packages/model-profiles` | `/profile` 档案切换 | 未发布 |
@@ -22,11 +21,12 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 | `@liuxincuit/pi-rules-context` | `packages/rules-context` | 按文件路径注入规则 | 未发布 |
 | `@liuxincuit/pi-subdir-context` | `packages/subdir-context` | 加载子目录的 `AGENTS.md` | 未发布 |
 | `@liuxincuit/pi-tree-summaries` | `packages/tree-summaries` | 会话树摘要预设 | 未发布 |
-| `@liuxincuit/pi-prompts` | `packages/prompts` | 提示词模板 | 未发布 |
 | `@liuxincuit/pi-codegraph` | `packages/codegraph` | CodeGraph 符号与调用路径 | 已发布 0.2.0，skills 声明修复待发版 |
 | `@liuxincuit/pi-skills` | `packages/skill-manager` | `/skills` 管理与用量统计 | 已发布 |
 
 `package.json` 里带 `private: true` 的包暂不发布。`codegraph` 和 `skill-manager` 保留各自已发布的包名与包内布局。
+
+技能与提示词不是插件，不单独建包：`skills/` 与 `prompts/` 由仓库根的 `package.json` 统一声明，新增条目直接放文件即可。
 
 ## 安装
 
@@ -41,6 +41,12 @@ pi install npm:@liuxincuit/pi-skills
 
 ```bash
 pi install ./packages/costtime
+```
+
+加载本仓库的技能与提示词（同样在仓库根执行）：
+
+```bash
+pi install .
 ```
 
 本地路径包不会被安装依赖，运行时依赖由 pi 宿主提供。需要 typecheck 或 smoke 时先在仓库根执行 `npm install`。

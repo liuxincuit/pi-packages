@@ -5,21 +5,23 @@ pi 插件集合。每个插件一个独立 npm 包，放在 `packages/<kebab-cas
 ## 目录结构
 
 ```
-packages/                 # 每个子目录是一个独立 pi 包
+packages/                 # 只放插件，每个子目录一个独立 pi 包
   ask-user-question/      # 包名 @liuxincuit/pi-ask-user-question
   ...
   codegraph/              # @liuxincuit/pi-codegraph，保持原仓库布局
   skill-manager/          # @liuxincuit/pi-skills，保持原仓库布局
-  prompts/                # @liuxincuit/pi-prompts，只有提示词模板
+skills/                   # 技能，不是插件；新增技能直接放这里，不要建包
+prompts/                  # 提示词模板，同样不是插件，不建包
 attic/next-phase/         # 停用扩展，不是包、不参与加载
 openspec/                 # OpenSpec 规格与变更记录（必须在仓库根）
-package.json              # workspaces 根，private，不声明 pi 字段
+package.json              # workspaces 根 + 资源包：声明 pi.skills 与 pi.prompts，不声明 extensions
 ```
 
-根 `package.json` 故意不写 `pi` 字段：它只是工作区入口，不应被当成一个包加载。
+根 `package.json` 只声明 `pi.skills` 与 `pi.prompts`，不声明 `pi.extensions`：它是工作区入口兼资源包，加载根路径只会带来技能与提示词。
 
 ## 包约定
 
+- 技能与提示词不是插件：技能放仓库根 `skills/`，提示词放仓库根 `prompts/`，由根 `package.json` 统一声明。不要为单个技能或提示词新建包。
 - 一个包一个扩展，入口为包根的 `index.ts`，由包内 `package.json` 的 `pi.extensions` 显式声明。
 - `codegraph` 和 `skill-manager` 是两个例外：保留各自原仓库的目录布局与 `pi` 字段，因为它们已经发布到 npm，改动包内路径会影响升级。
 - `solution`、`private: true` 表示暂不发布。已发布的两个包（`@liuxincuit/pi-codegraph`、`@liuxincuit/pi-skills`）不要加 `private`。
