@@ -17,12 +17,12 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 | `@liuxincuit/pi-model-profiles` | `packages/model-profiles` | `/profile` 档案切换 | 未发布 |
 | `@liuxincuit/pi-notify-on-reply` | `packages/notify-on-reply` | Windows 回复通知 | 未发布 |
 | `@liuxincuit/pi-persistent-history` | `packages/persistent-history` | 跨会话保留输入历史 | 未发布 |
-| `@liuxincuit/pi-pi-graph` | `packages/pi-graph` | `/pi-graph` 查看注册全貌 | 未发布 |
+| `@liuxincuit/pi-graph` | `packages/pi-graph` | `/pi-graph` 查看注册全貌 | 未发布 |
 | `@liuxincuit/pi-rules-context` | `packages/rules-context` | 按文件路径注入规则 | 未发布 |
 | `@liuxincuit/pi-subdir-context` | `packages/subdir-context` | 加载子目录的 `AGENTS.md` | 未发布 |
 | `@liuxincuit/pi-tree-summaries` | `packages/tree-summaries` | 会话树摘要预设 | 未发布 |
 | `@liuxincuit/pi-prompts` | `packages/prompts` | 提示词模板 | 未发布 |
-| `@liuxincuit/pi-codegraph` | `packages/codegraph` | CodeGraph 符号与调用路径 | 已发布 |
+| `@liuxincuit/pi-codegraph` | `packages/codegraph` | CodeGraph 符号与调用路径 | 已发布 0.2.0，skills 声明修复待发版 |
 | `@liuxincuit/pi-skills` | `packages/skill-manager` | `/skills` 管理与用量统计 | 已发布 |
 
 `package.json` 里带 `private: true` 的包暂不发布。`codegraph` 和 `skill-manager` 保留各自已发布的包名与包内布局。
