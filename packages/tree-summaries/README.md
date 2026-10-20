@@ -2,6 +2,21 @@
 
 把「干活（可选）+ 回到会话树开头 + 留下上下文」做成可配置的预设方案：每个方案是方案目录下的一个 `.md` 文件，pi 启动后自动变成 `/tree:<文件名>` 命令。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-tree-summaries
+```
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。内置的 `handoff.md` 随包分发，装完就有 `/tree:handoff`；自定义方案放 `<cwd>/.pi/tree-summaries/` 或 `~/.pi/agent/extensions/tree-summaries/`。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/tree-summaries
+```
+
 方案有两种，由 frontmatter 的 `kind` 决定：
 
 | `kind` | 执行方式 |

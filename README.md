@@ -20,7 +20,7 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 | `@liuxincuit/pi-graph` | `packages/pi-graph` | `/pi-graph` 查看注册全貌 | 未发布 |
 | `@liuxincuit/pi-rules-context` | `packages/rules-context` | 按文件路径注入规则 | 已发布 0.1.0 |
 | `@liuxincuit/pi-subdir-context` | `packages/subdir-context` | 加载子目录的 `AGENTS.md` | 已发布 0.1.0 |
-| `@liuxincuit/pi-tree-summaries` | `packages/tree-summaries` | 会话树摘要预设 | 未发布 |
+| `@liuxincuit/pi-tree-summaries` | `packages/tree-summaries` | 会话树摘要预设 | 已发布 0.1.0 |
 | `@liuxincuit/pi-codegraph` | `packages/codegraph` | CodeGraph 符号与调用路径 | 已发布 0.2.0，skills 声明修复待发版 |
 | `@liuxincuit/pi-skills` | `packages/skill-manager` | `/skills` 管理与用量统计 | 已发布 |
 
