@@ -2,6 +2,21 @@
 
 让模型把选择题交给用户，而不是自己猜。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-ask-user-question
+```
+
+`@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui`、`typebox` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后工具才可用。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/ask-user-question
+```
+
 ## 做什么
 
 注册 `ask_user_question` 工具，模型传入一组问题（每题带选项），用户在 TUI 里作答，答案以结构化 JSON 返回。

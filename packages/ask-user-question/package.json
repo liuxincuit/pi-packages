@@ -1,13 +1,24 @@
 {
   "name": "@liuxincuit/pi-ask-user-question",
   "version": "0.1.0",
-  "private": true,
   "description": "让模型把选择题交给用户，而不是自己猜",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "ask",
+    "question",
+    "clarification"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/ask-user-question"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "pi": {
     "extensions": [
@@ -16,6 +27,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

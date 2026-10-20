@@ -6,7 +6,7 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 
 | 包 | 目录 | 做什么 | 发布 |
 |---|---|---|---|
-| `@liuxincuit/pi-ask-user-question` | `packages/ask-user-question` | 让模型把选择题交给用户 | 未发布 |
+| `@liuxincuit/pi-ask-user-question` | `packages/ask-user-question` | 让模型把选择题交给用户 | 已发布 0.1.0 |
 | `@liuxincuit/pi-auto-prepend` | `packages/auto-prepend` | 每 N 轮注入一条自定义消息 | 未发布 |
 | `@liuxincuit/pi-bash-approver` | `packages/bash-approver` | 自动批准 bash 命令的权限询问 | 未发布 |
 | `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 未发布 |
@@ -36,6 +36,7 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 pi install npm:@liuxincuit/pi-codegraph
 pi install npm:@liuxincuit/pi-skills
 pi install npm:@liuxincuit/pi-deepseek-web
+pi install npm:@liuxincuit/pi-ask-user-question
 ```
 
 从本地工作区安装单个插件（在仓库根执行）：
