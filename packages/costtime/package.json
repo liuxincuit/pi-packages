@@ -1,13 +1,24 @@
 {
   "name": "@liuxincuit/pi-costtime",
   "version": "0.1.0",
-  "private": true,
   "description": "在 working 行显示每轮耗时，结束后写入对话流",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "cost",
+    "time",
+    "duration",
+    "timer"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/costtime"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "pi": {
     "extensions": [
@@ -16,6 +27,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

@@ -2,6 +2,21 @@
 
 每轮对话的耗时：运行时显示在输入框里的 working 行，结束后落到对话流里。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-costtime
+```
+
+`@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/costtime
+```
+
 ## 做什么
 
 | 阶段 | 表现 |
@@ -29,15 +44,7 @@
 4. 验证中断：`Ctrl+C` 打断一轮，working 行应恢复默认文本（`Working`），且该轮仍写入耗时条目。
 5. 验证父子隔离：起一个子代理跑几分钟，父会话的计时不应被子代理的耗时顶掉。
 
-纯逻辑回归（不进 TUI）：
-
-```bash
-PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"
-node .pi/T/ext-verify/build.cjs .pi/T/ext-verify/costtime-behavior.mjs .pi/T/ext-verify/out-costtime.mjs
-node .pi/T/ext-verify/out-costtime.mjs
-```
-
-覆盖：起表即显示、逐秒跳动、重试不重置起点、settle 恢复默认文本并写入 entry draft、停表后不再刷新。
+上面 5 条就是全部验证面：起表即显示、逐秒跳动、重试不重置起点、settle 恢复默认文本并写入 entry draft、停表后不再刷新。这些只能靠 TUI 手动看，本包没有随仓库发布的自动化测试。
 
 ## 陷阱
 
