@@ -1,11 +1,11 @@
 ---
 name: pi-extension-dev
-description: 开发、修改或验证 pi 扩展（pi/extensions/ 下的 TS 插件）、自定义/覆盖工具（registerTool）、定制 bash 工具行为（spawnHook/operations）、切会话与会话树操作（navigateTree/newSession/fork、工具默认禁用与显隐）时使用。也适用于排查扩展不生效、子代理行为与父会话不一致、验证扩展代码等场景
+description: 开发、修改或验证 pi 扩展（packages/<name>/ 下的 TS 插件）、自定义/覆盖工具（registerTool）、定制 bash 工具行为（spawnHook/operations）、切会话与会话树操作（navigateTree/newSession/fork、工具默认禁用与显隐）时使用。也适用于排查扩展不生效、子代理行为与父会话不一致、验证扩展代码等场景
 ---
 
 # pi-extension-dev
 
-pi 扩展开发与验证参考（适用本仓库 `pi/extensions/` 与 pi 扩展 API）。
+pi 扩展开发与验证参考。扩展代码在 `D:/code/pi-packages/packages/<name>/`，本技能只讲 API 与验证方法。
 
 ## 关键机制
 
@@ -49,7 +49,7 @@ const jiti = createJiti(__filename, {
 		"@earendil-works/pi-tui": `${process.env.PI_ROOT}/node_modules/@earendil-works/pi-tui/dist/index.js`,
 	},
 });
-console.log(typeof jiti(`${__dirname}/../../../pi/extensions/<name>/index.ts`).default);
+console.log(typeof jiti(`<扩展目录>/index.ts`).default);
 ```
 
 `typebox` 的实际入口按它自己的 `exports` 走（`build/index.mjs`/`.cjs`/`.js` 三选一，存在即可），不要假设文件名。
@@ -61,7 +61,7 @@ console.log(typeof jiti(`${__dirname}/../../../pi/extensions/<name>/index.ts`).d
 ```js
 // .pi/T/ext-verify/behavior.cjs
 const tools = new Map();
-jiti("<绝对路径>/pi/extensions/<name>/index.ts").default({ registerTool: (d) => tools.set(d.name, d) });
+jiti("<扩展目录>/index.ts").default({ registerTool: (d) => tools.set(d.name, d) });
 const result = await tools.get("web_fetch").execute("id", { url: "..." }, undefined, undefined, {});
 ```
 
@@ -81,7 +81,7 @@ const PI_ROOT = process.env.PI_ROOT;
 const cwd = process.cwd();
 const { loadExtensions } = await import(pathToFileURL(`${PI_ROOT}/dist/core/extensions/loader.js`).href);
 
-const root = path.join(cwd, "pi", "extensions");   // 只扫一层子目录，与 pi 的发现规则一致
+const root = path.join(cwd, "packages");   // 每个包一个子目录，入口见其 package.json 的 pi.extensions
 const paths = fs.readdirSync(root).map((n) => path.join(root, n, "index.ts")).filter((p) => fs.existsSync(p));
 
 const result = await loadExtensions(paths, cwd);   // eventBus / runtime 可选，不传自动创建
@@ -129,7 +129,7 @@ pi -p --no-extensions -e /abs/path/extensions/foo.ts --session-dir .tmp/s1 "只�
 **纯逻辑单测**（拆出 `logic.ts` 之类的无依赖模块才能这么跑）：
 
 ```bash
-node --test pi/extensions/<name>/*.test.mts
+node --test packages/<name>/*.test.mts
 ```
 
 Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀避开 `MODULE_TYPELESS_PACKAGE_JSON` 警告，**不要**为此给 `package.json` 加 `"type": "module"`。
@@ -138,7 +138,7 @@ Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀�
 
 ```js
 // .pi/T/ext-verify/behavior.mjs —— 用上面的 build.cjs 打成单文件再 node 跑
-import ext from "../../../pi/extensions/<name>/index.ts";
+import ext from "<扩展目录>/index.ts";
 let tool;
 const execCalls = [];
 const pi = {
@@ -183,11 +183,11 @@ console.log(execCalls.length, execCalls[0]);
 | 工具里直接调 `ctx.navigateTree` / `newSession` 想切会话 | 工具的 ctx 上没有这些方法（只在命令上下文），改用 `agent_settled` 派发内部命令，见「会话控制与会话树」 |
 | 工具里 `sendUserMessage("/cmd", { deliverAs: "followUp" })` 想延后执行命令 | slash 命令是**立即执行**的，`deliverAs` 对它无效；还得显式传 `expandPromptTemplates: true`，否则命令根本不被派发 |
 | `/tree` 切分支后工具显隐不对 | `setActiveTools` 不持久化、不随分支恢复；在 `session_start` / `session_tree` 里重算 |
-| 验证脚本里写 `../../../pi/extensions/...` 被 pi-permission-system 拦成 external_directory | 它把相对路径按 cwd 解析后误判成工作目录外。不要换花样重试，改用工作目录内的绝对路径，或先向用户说明再操作 |
+| 验证脚本里写 `../../../packages/...` 被 pi-permission-system 拦成 external_directory | 它把相对路径按 cwd 解析后误判成工作目录外。不要换花样重试，改用工作目录内的绝对路径，或先向用户说明再操作 |
 | 脚本调扩展渲染时报 `Theme not initialized. Call initTheme() first.` | 渲染器里用了 `keyHint` / `keyText`（走全局 theme），脚本先 `initTheme("dark", false)`（从 `<pi>/dist/modes/interactive/theme/theme.js` 导入）。另外 `keyText` 在无 keybinding 配置时返回空串，别断言键位文本——默认值在 `<pi>/dist/core/keybindings.js` |
 
 ## 参考
 
 - pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`"$(npm root -g)/@earendil-works/pi-coding-agent"`；用 `readlink -f $(command -v pi)` 推导会得到 `~/AppData`，因为 npm 装的是 `.cmd` 包装）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
-- 实现参考：本仓库 `pi/extensions/`（含子目录）下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
+- 实现参考：`D:/code/pi-packages/packages/` 下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
 - 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined
