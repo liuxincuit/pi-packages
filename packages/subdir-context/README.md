@@ -2,6 +2,21 @@
 
 读取文件时自动加载该文件所在子目录的 `AGENTS.md`。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-subdir-context
+```
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/subdir-context
+```
+
 ## 做什么
 
 `read` 工具返回结果后，沿目标文件的父目录链向上查找 `AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md`，找到即作为 `<system-reminder>` 追加到结果里，让子目录的局部约定在访问到该目录时才生效。

@@ -1,11 +1,20 @@
 {
   "name": "@liuxincuit/pi-rules-context",
   "version": "0.1.0",
-  "private": true,
   "description": "按文件路径注入规则",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "rules",
+    "context",
+    "agents-md"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/rules-context"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
@@ -16,6 +25,11 @@
   },
   "files": [
     "index.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

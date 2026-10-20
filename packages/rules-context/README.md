@@ -2,6 +2,21 @@
 
 按文件路径注入规则，`@the-forge-flow/pi-rules` 的单文件精简版。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-rules-context
+```
+
+`@earendil-works/pi-coding-agent` 由 pi 宿主提供，不需要额外安装。
+装完 `/reload` 后生效；规则本身在 `session_start` 时扫描，改规则要重启会话。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/rules-context
+```
+
 ## 做什么
 
 从规则目录加载带 frontmatter 的 `.md` 规则，当 `read` / `edit` / `write` 操作的文件路径命中规则的 `paths` 模式时，把规则正文以 `<system-reminder>` 包裹后**前置**注入该工具的结果。
