@@ -1,0 +1,193 @@
+---
+name: pi-extension-dev
+description: 开发、修改或验证 pi 扩展（packages/<name>/ 下的 TS 插件）、自定义/覆盖工具（registerTool）、定制 bash 工具行为（spawnHook/operations）、切会话与会话树操作（navigateTree/newSession/fork、工具默认禁用与显隐）时使用。也适用于排查扩展不生效、子代理行为与父会话不一致、验证扩展代码等场景
+---
+
+# pi-extension-dev
+
+pi 扩展开发与验证参考。扩展代码在 `D:/code/pi-packages/packages/<name>/`，本技能只讲 API 与验证方法。
+
+## 关键机制
+
+- **加载**：`package.json` 的 `pi.extensions` 声明目录；pi 只扫该目录一层——取顶层 `*.ts`/`*.js`，以及子目录的 `index.ts`（不递归，子目录内其他 .ts 不加载），jiti 逐个加载入口；**修改后必须 /reload 才生效**
+- **同名覆盖**：`pi.registerTool({ name: "bash" })` 覆盖内置工具（官方 tool-override 模式），LLM 调用走新注册
+- **作用域**：扩展工厂函数在父会话和每个子代理会话都会重新执行，但**模块只 import 一次**（`loader.js` 按路径缓存 factory），所以**顶层模块变量在父会话与所有同 cwd 的子会话之间共享**——并发子代理会互相踩，需要按 `ctx.sessionManager.getSessionId()` 隔离。仅 `/reload` 或子代理换 cwd 时会重新加载模块。跨扩展取值走 `globalThis` + `Symbol.for()`；子代理注册同名工具覆盖子代理内置工具
+- **bash 工具定制**：`createBashTool(cwd, { spawnHook, operations })`
+  - `spawnHook` — 执行前改 command/cwd/env；**改不了 timeout**
+  - `operations` — 整体替换执行后端（pi 官方 `createLocalBashOperations()` 保持原生行为），可注入默认 timeout 等
+- **timeout 语义**：bash 工具 schema 的 `timeout`（秒）是 LLM 可选参数，**无默认值**；LLM 调用时传的 timeout 是工具参数，不是 harness 调用超时。扩展可通过包装 operations 注入默认值，LLM 显式值优先
+- **渲染上下文（`ToolRenderContext`）**：`renderCall` / `renderResult` 的第三个参数带 `cwd` / `args` / `expanded` / `isError` / `isPartial` / `executionStarted` / `toolCallId` / `lastComponent` 等，按渲染状态切换文案全靠它。注意 `isPartial` **初始就是 `true`**（参数流式 → 执行中 → 结果流式全程为真），只有终态才为 `false`——想「只在完成后显示某提示」用它，别用 `executionStarted`
+
+## 会话控制与会话树
+
+扩展想切会话（新建会话、跳分支、fork）时，这几条决定了能怎么写：
+
+- **会话控制方法只挂在命令上下文上**：`waitForIdle` / `navigateTree` / `newSession` / `fork` / `switchSession` 属于 `ExtensionCommandContext`。工具 `execute` 的 `ctx` 是 `ExtensionContext`，事件处理器、快捷键拿到的也是它——**工具不可能自己切会话**。
+- **工具里派发命令是「立即执行」**：`pi.sendUserMessage("/cmd", { expandPromptTemplates: true })` 会在**当前工具调用内部**同步跑命令处理器（`expandPromptTemplates` 默认 false，不传根本不派发命令）。此时 agent 正在 streaming：`navigateTree` 直接抛 `Wait for the current response to finish before navigating the session tree.`，命令里的 `waitForIdle()` 会死锁。
+- **安全派发点是 `agent_settled`**：那时 `ctx.isIdle()` 已为 true（pi 先置 `_isAgentRunActive = false` 再发事件），`waitForIdle()` 立即返回、`navigateTree` 可用。推荐链路：工具落盘一个「待执行」entry → `agent_settled` 里 `pi.sendUserMessage("/内部命令", { expandPromptTemplates: true })` → 命令里切分支 + 注入 prompt。工具返回 `terminate: true` 可跳过本轮多余的 LLM 调用（取消路径别加，否则模型没机会继续干活）。
+- **`agent_settled` handler 里发的消息会延迟执行**：`_emitAgentSettled` 先置 `_isEmittingAgentSettled = true`，跑完全部 settled handler 后才关闭它，然后逐个执行期间入队的 `prompt` / `sendUserMessage`，最后才 resolve 等待 idle 的 promise。两个可依赖的后果：settled handler 里发消息不会重入 `agent_start`（不必担心看到「新一轮已开始」的中间态）；`waitForIdle()` 返回时上一轮已彻底结束，所以「先 `waitForIdle()` → 注册收工回调 → 再发消息」这种顺序不会被上一轮的 `agent_settled` 抢先触发。
+- **`pi.appendEntry` 不返回 entry id**，且切分支之后写的 entry 落在**新分支**上。跨分支记账不能靠「就地更新」，要用「引用对方 id」：比如 START entry 的 data 里记 handoffId，判断是否已消费时扫全量 `getEntries()` 而不是当前分支——否则用户 `/tree` 回到旧分支会把同一件事再做一次。
+- **工具显隐是运行时状态**：`pi.setActiveTools()` 不写 session entry，`/tree` 切分支**不会**自动恢复。要按分支显示不同工具集，得在 `session_start` / `session_tree` 里自己重算（注意 `navigateTree` 之后新分支还没写标记，需要再同步一次）。
+- **注册 ≠ 声明给模型**：`direct`/`model-only` 工具**注册时默认激活**（reload 亦然），所以「默认禁用」有两种写法——老办法是在 `session_start` 里 `pi.setActiveTools(pi.getActiveTools().filter((n) => n !== NAME))` 主动摘掉（每次都跑）；pi ≥0.99 更干净：注册时带 `defaultActive: false`，工具进注册表但不声明给模型，再用 `pi.setActiveTools()` 按需激活。没有注销 API，要撤回已注册的工具就**同名重新注册 + `exposure: "hidden"`**（内置 `codemode` / `tool-search` 就是这么控制自身暴露的）
+- **`tool_result` handler 里可以改活动集**：工具结果处理中调 `pi.setActiveTools()` 有效，改动在**下一个 turn** 生效（session 里表现为一条新的 system 消息带 `toolsAdded`/`toolsRemoved`）——所以「工具结果里发现某目录/某能力可用 → 注入 `<system-reminder>` + `notify` + 启用对应工具」能让模型在下一次请求里同时看到提示和工具。代价是请求前缀变了：对无法表达工具集变更的 provider，pi 会发完整 transcript checkpoint（缓存前缀失效），别在热路径上反复改
+- **同名覆盖在增量里表现为「同时在 added 和 removed」**：`/reload` 替换一个同名工具时，那条 system 消息里该名字会**同时**出现在 `toolsAdded` 和 `toolsRemoved`。想从 session JSONL 还原「当前有哪些工具」，必须**先应用 removed 再应用 added**；先加后删会把刚加上的又删掉（实测按错顺序把一个 11 工具集数成 10 个，并把新注册的 `web_search` 数没了）。
+
+这几条组合起来即完整的「阶段交接」模式：工具落盘一个待执行 entry → `agent_settled` 里派发内部命令 → 命令里切分支 + 注入 prompt，并按分支重算工具显隐。
+
+## 验证（仓库无 node_modules）
+
+**版本对齐**：类型与 API 以实际运行的 pi 包为准——`pi --version` 看版本，`"$(npm root -g)/@earendil-works/pi-coding-agent"/dist/**/*.d.ts` 看类型定义。用新 API 前先确认该版本有对应字段，否则要么编译不过，要么被迫 cast 把真问题掩盖掉。
+
+**零安装路线**：pi 自带的 `node_modules` 里有 typebox / jiti，**但 pi 1.3.0 起已没有 esbuild**（`pi-coding-agent/node_modules` 下只有 jiti，没有 `esbuild`）。因此走 **jiti 直接加载**，一次拿到「语法能解析 + import 路径有效 + 工厂不抛错 + 工具/handler 注册结果」四样，比旧版 esbuild 只验语法更有信息量。以下命令在**仓库根目录**执行（临时产物都落在 gitignore 的 `.pi/T/` 内）。
+
+```js
+// .pi/T/ext-verify/jiticheck.cjs，用 `PI_ROOT="$PI_ROOT" node .pi/T/ext-verify/jiticheck.cjs` 跑
+const { createJiti } = require(`${process.env.PI_ROOT}/node_modules/jiti/lib/jiti.cjs`);
+const jiti = createJiti(__filename, {
+	alias: {  // 扩展 import 的运行时包都得指到 pi 自己的 node_modules，否则 jiti 从扩展文件位置向上找不到
+		typebox: `${process.env.PI_ROOT}/node_modules/typebox/build/index.mjs`,
+		"@earendil-works/pi-tui": `${process.env.PI_ROOT}/node_modules/@earendil-works/pi-tui/dist/index.js`,
+	},
+});
+console.log(typeof jiti(`<扩展目录>/index.ts`).default);
+```
+
+`typebox` 的实际入口按它自己的 `exports` 走（`build/index.mjs`/`.cjs`/`.js` 三选一，存在即可），不要假设文件名。
+
+**只验语法也能用 esbuild（若环境里恰好有）**：装到 npm 顶层或其他目录时可以把 `package.json` 里的 esbuild 找出来，`--external:@earendil-works/* --external:typebox` 打包后 `node out.mjs` 跑一遍。但 pi 1.3.0 安装里没有，别再把它当默认路径——旧版这条命令会直接 `MODULE_NOT_FOUND`。
+
+**行为验证（验「execute 真跑起来」）**：jiti 加载后把 `pi` mock 成只收集 `registerTool` 的对象，就能拿到工具定义直接调 `execute`：
+
+```js
+// .pi/T/ext-verify/behavior.cjs
+const tools = new Map();
+jiti("<扩展目录>/index.ts").default({ registerTool: (d) => tools.set(d.name, d) });
+const result = await tools.get("web_fetch").execute("id", { url: "..." }, undefined, undefined, {});
+```
+
+要**隔离 HOME 做配置态测试**（验「配置缺失 / 开关关闭」这类分支）时，光改 `HOME` 不够——Windows 上 `os.homedir()` 读的是 `USERPROFILE`，两个都得改，否则被测代码照旧读真实用户目录，测试看起来通过其实没隔离。
+
+**验证输出时不要从渲染文本反推结构化数据**：`renderResult` 出来的纯文本里可能夹着正文自带的 URL / 关键词，用正则提取来断言会得到自相矛盾的计数（实测把一个 20 条结果的调用数成 21 条）。要到数据层断言——直接调 `logic.ts` 的纯函数，或读 `details`。
+
+**最省事的一步是让 pi 自己加载全部扩展**——直接用 pi 的 loader 跑一遍，比逐个打包更能发现真问题（jiti 解析、import 路径失效、工厂抛错、handler 注册结果）。Windows 上绝对路径必须转成 `file://` URL，直接 `import()` 绝对路径会报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`：
+
+```js
+// .pi/T/ext-verify/load-check.mjs —— 用法：PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node .pi/T/ext-verify/load-check.mjs
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const PI_ROOT = process.env.PI_ROOT;
+const cwd = process.cwd();
+const { loadExtensions } = await import(pathToFileURL(`${PI_ROOT}/dist/core/extensions/loader.js`).href);
+
+const root = path.join(cwd, "packages");   // 每个包一个子目录，入口见其 package.json 的 pi.extensions
+const paths = fs.readdirSync(root).map((n) => path.join(root, n, "index.ts")).filter((p) => fs.existsSync(p));
+
+const result = await loadExtensions(paths, cwd);   // eventBus / runtime 可选，不传自动创建
+console.log(`加载 ${result.extensions.length}/${paths.length}`);
+for (const e of result.extensions) {
+	console.log(" OK  ", path.relative(cwd, e.path), "|", [...e.handlers.keys()].join(",") || "-");
+}
+for (const err of result.errors) console.log(" FAIL", err.path, "|", err.error);
+```
+
+它同时也是 **pi 升级后的首选回归手段**：换版本后先跑它，`errors` 为空再谈其他；输出里每个扩展注册的 handlers / tools / commands 能直接看出「注册点是否还在」。
+
+**渲染级验证（验「TUI 里画出什么」）**：`loadExtensions` 返回的 `extension.tools` 是 `Map<工具名, { definition }>`，`definition` 就是 `registerTool` 收到的那个对象，`renderCall` / `renderResult` 可以直接调。配一个颜色透传的假 theme，用真实 pi-tui 组件渲染成纯文本，就能逐行断言文案：
+
+```js
+const theme = { fg: (_color, text) => text, bold: (text) => text };
+const tool = result.extensions[0].tools.get("read").definition;
+const ctx = { args: { path: "D:/x/SKILL.md" }, cwd, executionStarted: true, isPartial: false, expanded: false, isError: false, toolCallId: undefined, invalidate() {}, lastComponent: undefined };
+const component = tool.renderResult({ content: [{ type: "text", text: "..." }], details: undefined }, { expanded: false, isPartial: false }, theme, ctx);
+component.render(200).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));   // → 纯文本行，可断言
+```
+
+`toolCallId: undefined` 是有意的：带 spinner 的渲染器（如 compact-tools）见到 id 会起 `setInterval`，脚本不退出。
+
+折叠 / 展开 / 执行中 / 错误态都能用同一手法覆盖，比打包验证更接近「用户看到什么」——**手写推测的预览会漏细节**（提示的括号、行范围、折叠条件），跑一遍真实渲染才不会漏。
+
+**端到端验证（验「模型实际看到了什么」）**：mock 验的是扩展自己的逻辑，验不了 pi 是否真把工具声明给模型、是否真注入了技能。最便宜的办法是用真实 pi 跑一次 print 会话，再读 session JSONL：
+
+```bash
+# 在目标 cwd 里执行；-e 用扩展入口的绝对路径，--session-dir 隔离会话，别污染真实会话
+pi -p --no-extensions -e /abs/path/extensions/foo.ts --session-dir .tmp/s1 "只回复 ok"
+```
+
+```python
+# session JSONL 里可直接断言：
+#   第一条 system 消息的 toolsAdded           → 声明给模型的工具（不在 = 没声明）
+#   第一条 system 消息的 sections.skills      → 被注入的技能
+#   后续 system 消息的 toolsAdded/toolsRemoved → 会话中途的工具集变更
+```
+
+- `-p`（print）模式 `hasUI = false`，`ctx.ui.notify`/`setStatus` 什么都不做，验不了 UI 提示。要验就用 **RPC 模式**：`pi --mode rpc`，stdin 发 `{"id":"r1","type":"prompt","message":"..."}`，stdout 上能抓到 `extension_ui_request`（`notify` / `setStatus` / `setWidget`…）——与 TUI 同源。
+- 项目级 `.pi/` 配置只在 `isProjectTrusted()` 为真时生效；非交互运行要加 `--approve`，否则项目配置被静默忽略（症状：改了配置“没生效”）。
+- 记得 `--no-extensions`（关掉其他扩展，`-e` 仍生效），否则测出来的工具/技能集里混着别人的东西。
+
+**纯逻辑单测**（拆出 `logic.ts` 之类的无依赖模块才能这么跑）：
+
+```bash
+node --test packages/<name>/*.test.mts
+```
+
+Node ≥ 22 原生剥离 TS 类型，零依赖；测试文件用 `.mts` 后缀避开 `MODULE_TYPELESS_PACKAGE_JSON` 警告，**不要**为此给 `package.json` 加 `"type": "module"`。
+
+**行为验证（需要 UI 的扩展）**：把入口换成 `.mjs`，mock 掉 pi 与 ctx，就能不进 TUI 跑 `execute`：
+
+```js
+// .pi/T/ext-verify/behavior.mjs —— 用上面的 build.cjs 打成单文件再 node 跑
+import ext from "<扩展目录>/index.ts";
+let tool;
+const execCalls = [];
+const pi = {
+	registerTool: (d) => { tool = d; },
+	exec: async (cmd, args) => { execCalls.push(args.join(" ")); return { stdout: "", stderr: "", code: 0, killed: false }; },
+};
+let inputHandlers = [];
+let resolvePending;
+const ctx = {
+	mode: "tui",
+	ui: {
+		onTerminalInput: (h) => { inputHandlers.push(h); return () => {}; },
+		custom: () => new Promise((r) => { resolvePending = r; }),   // 受控 promise：自己决定 UI 何时结束
+	},
+};
+ext(pi);                                                        // 拿到 registerTool 收到的定义，才能调 execute
+const run = tool.execute("id", params, undefined, undefined, ctx);
+await new Promise((r) => setTimeout(r, 11_000));                  // 等过真实的延时窗口
+inputHandlers[0]?.("x");                                         // 模拟一次按键，验证取消分支
+resolvePending({ questions: [], answers: [], cancelled: true });
+await run;
+console.log(execCalls.length, execCalls[0]);
+```
+
+`ctx.ui.custom(factory)` 里不必建组件，只返回一个自己控制的 promise —— 这样能验证延时、取消、监听器注销这些时序逻辑（组件渲染另说）。延时是源码里的常量时只能等真实时长，一条 30 秒的脚本换来确定性，比塞进 TUI 里手测划算。`exec` 的 mock 同时留下了真实命令字符串，可以再拿去 `spawnSync` 加 `timeout` 真跑一次，验证命令行拼装（引号、转义、枚举值）。
+
+真实验证：改完扩展后 /reload，实际调用工具观察（如不传 timeout 跑 sleep 验证默认超时生效，错误消息会带说明）。
+
+## 常见错误
+
+| 错误 | 修正 |
+|---|---|
+| 调用 bash 工具时传 `timeout: 150` 想限制 harness 调用 → 变成工具显式超时，命令按 150s 执行 | timeout 是工具参数；不传才走扩展默认值 |
+| 临时目录被 pi-permission-system 拦截 | 拦截原因是**路径在工作目录外**，不是命令模式。把临时目录建在工作目录内（如 `.pi/T/`），或先向用户说明；不要换命令绕过 |
+| 用 `readlink -f "$(command -v pi)"` 推导 PI_ROOT → 得到 `~/AppData` | npm 的 `pi.cmd` 包装没指向包目录，改用 `PI_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent"` |
+| 按旧文档跑 `node "$PI_ROOT/node_modules/esbuild/bin/esbuild"` → `MODULE_NOT_FOUND` | pi 1.3.0 安装里**只有 jiti、没有 esbuild**。改用 jiti 直接加载扩展（见「验证」），不要再找 esbuild |
+| 隔离 HOME 测配置分支时只改 `HOME` → 被测代码仍读真实用户目录 | Windows 上 `os.homedir()` 读 `USERPROFILE`，两个都要改 |
+| 扩展 import 了 pi-tui 运行时值（`Text`、`Editor`…），打包后 `node out.mjs` 报缺 pi-tui | 不要打包——用 jiti 直接加载（它的 `alias` 把 pi-tui 指到 pi 自己的 `node_modules`），运行时依赖自然就在 |
+| 改完扩展不 /reload 就测试 | 不 reload 不生效 |
+| 在 spawnHook 里试图改 timeout | spawnHook 只能改 command/cwd/env，用 operations 包装 |
+| 在 pi 的 `dist/` 上 `grep -r` 找源码 → 命中 `dist/bundle/chunks/*.js`（esbuild 压缩产物，单行最大 3.9MB），一次喷出 50KB+ 输出 | 加 `--exclude-dir=bundle`——`dist/core/`、`dist/modes/` 下是格式化分文件，可正常 grep/sed；已命中 bundle 时用 `grep -oE ".{0,300}"` 限宽 |
+| 工具里直接调 `ctx.navigateTree` / `newSession` 想切会话 | 工具的 ctx 上没有这些方法（只在命令上下文），改用 `agent_settled` 派发内部命令，见「会话控制与会话树」 |
+| 工具里 `sendUserMessage("/cmd", { deliverAs: "followUp" })` 想延后执行命令 | slash 命令是**立即执行**的，`deliverAs` 对它无效；还得显式传 `expandPromptTemplates: true`，否则命令根本不被派发 |
+| `/tree` 切分支后工具显隐不对 | `setActiveTools` 不持久化、不随分支恢复；在 `session_start` / `session_tree` 里重算 |
+| 验证脚本里写 `../../../packages/...` 被 pi-permission-system 拦成 external_directory | 它把相对路径按 cwd 解析后误判成工作目录外。不要换花样重试，改用工作目录内的绝对路径，或先向用户说明再操作 |
+| 脚本调扩展渲染时报 `Theme not initialized. Call initTheme() first.` | 渲染器里用了 `keyHint` / `keyText`（走全局 theme），脚本先 `initTheme("dark", false)`（从 `<pi>/dist/modes/interactive/theme/theme.js` 导入）。另外 `keyText` 在无 keybinding 配置时返回空串，别断言键位文本——默认值在 `<pi>/dist/core/keybindings.js` |
+
+## 参考
+
+- pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`"$(npm root -g)/@earendil-works/pi-coding-agent"`；用 `readlink -f $(command -v pi)` 推导会得到 `~/AppData`，因为 npm 装的是 `.cmd` 包装）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
+- 实现参考：`D:/code/pi-packages/packages/` 下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
+- 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined
