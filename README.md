@@ -30,19 +30,13 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 
 ## 安装
 
-从 npm 安装单个插件：
+包名就是上表里的 `@liuxincuit/pi-*`，挑一个装：
 
 ```bash
-pi install npm:@liuxincuit/pi-codegraph
-pi install npm:@liuxincuit/pi-skills
 pi install npm:@liuxincuit/pi-deepseek-web
-pi install npm:@liuxincuit/pi-ask-user-question
-pi install npm:@liuxincuit/pi-costtime
-pi install npm:@liuxincuit/pi-rules-context
-pi install npm:@liuxincuit/pi-subdir-context
 ```
 
-从本地工作区安装单个插件（在仓库根执行）：
+表里标「未发布」的只能走本地路径；开发中的包也用本地路径，这样改源码 `/reload` 就生效（npm 装的版本不会跟着仓库变）。
 
 ```bash
 pi install ./packages/costtime
