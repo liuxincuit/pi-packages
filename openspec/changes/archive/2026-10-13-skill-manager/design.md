@@ -159,7 +159,7 @@ skill 描述以中文为主，用 `String.length` 补空格会错位，改用 pi
 ## Migration Plan
 
 1. 本仓库增加 `package.json`，声明 `pi.extensions: ["./pi/extensions"]`
-2. 把 `D:/code/pi-skills` 加入 `~/.pi/agent/settings.json` 的 `packages`（独立于代码实现，动手前单独确认）
+2. 把 `/abs/pi-skills` 加入 `~/.pi/agent/settings.json` 的 `packages`（独立于代码实现，动手前单独确认）
 3. `/reload` 或重启 pi 后 `/skills` 可用
 
 回滚：从 `packages` 移除该条目并重启；两个 `config.json` 可直接删除，删除后所有 skill 恢复默认可见。

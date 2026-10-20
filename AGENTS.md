@@ -41,7 +41,7 @@ const result = await loadExtensions(entryPaths, process.cwd());
 判据是 `result.errors` 为空 **且** `result.extensions.length` 等于预期数量。注意：
 
 - `cwd` 是必填参数，漏传会在 pi 内部抛 `TypeError`。
-- 绝对路径必须包成 `file://` URL，Windows 上直接 `import()` 绝对路径会报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。
+- 路径必须包成 `file://` URL，Windows 上直接 `import()` 绝对路径会报 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。
 - pi 1.3.0 起安装里不再自带 esbuild，不要用 `esbuild --bundle` 验证。
 
 纯逻辑单测零依赖直接跑：

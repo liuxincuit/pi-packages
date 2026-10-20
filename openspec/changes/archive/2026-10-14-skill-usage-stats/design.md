@@ -112,7 +112,7 @@ for (const toolCall of toolCalls) {
    没有「只有失败、从无成功」的 skill
 ```
 
-失败全是 `ENOENT`，两类成因：MSYS 把 `/c/Users/...` 拼成 `D:\c\Users\...`；以及模型按系统提示里的旧 `location` 去读一个已经不在的文件。
+失败全是 `ENOENT`，两类成因：MSYS 把 `/c/...` 拼成 `/abs/c/users\...`；以及模型按系统提示里的旧 `location` 去读一个已经不在的文件。
 
 **为什么值得为 1.5% 付这个成本**：它防住的正是「skill 刚被删、系统提示还留着旧 location、模型反复按旧路径尝试」那段污染。本机数据里已有影子（`systematic-debugging`、`grill-me` 都留下过失效路径的尝试），只是同期也有成功记录才没被淹。用户删掉一个 skill 又没 reload 会话时，表上就会出现一个「用过」但其实从未加载成功的 skill。
 
@@ -137,8 +137,8 @@ for (const toolCall of toolCalls) {
 ### D4 日志以 path 为主键，name 是派生数据
 
 ```jsonl
-{"ts":"2026-10-13T03:17:29.722Z","via":"read","path":"D:/code/skills/skills/git-commit/SKILL.md","session":"01a12f73-…","cwd":"D:/code/pi-skills"}
-{"ts":"2026-10-13T04:02:11.101Z","via":"explicit","path":"…/retrospective/SKILL.md","session":"01a13340-…","cwd":"D:/code/pi-skills"}
+{"ts":"2026-10-13T03:17:29.722Z","via":"read","path":"/abs/skills/skills/git-commit/SKILL.md","session":"01a12f73-…","cwd":"/abs/pi-skills"}
+{"ts":"2026-10-13T04:02:11.101Z","via":"explicit","path":"…/retrospective/SKILL.md","session":"01a13340-…","cwd":"/abs/pi-skills"}
 ```
 
 **为什么 name 不进日志**：

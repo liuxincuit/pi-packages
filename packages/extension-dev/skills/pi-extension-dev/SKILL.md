@@ -5,7 +5,7 @@ description: 开发、修改或验证 pi 扩展（packages/<name>/ 下的 TS 插
 
 # pi-extension-dev
 
-pi 扩展开发与验证参考。扩展代码在 `D:/code/pi-packages/packages/<name>/`，本技能只讲 API 与验证方法。
+pi 扩展开发与验证参考。扩展代码位于 `packages/<name>/`（pi-packages 仓库），本技能只讲 API 与验证方法。
 
 ## 关键机制
 
@@ -99,7 +99,7 @@ for (const err of result.errors) console.log(" FAIL", err.path, "|", err.error);
 ```js
 const theme = { fg: (_color, text) => text, bold: (text) => text };
 const tool = result.extensions[0].tools.get("read").definition;
-const ctx = { args: { path: "D:/x/SKILL.md" }, cwd, executionStarted: true, isPartial: false, expanded: false, isError: false, toolCallId: undefined, invalidate() {}, lastComponent: undefined };
+const ctx = { args: { path: "skills/foo/SKILL.md" }, cwd, executionStarted: true, isPartial: false, expanded: false, isError: false, toolCallId: undefined, invalidate() {}, lastComponent: undefined };
 const component = tool.renderResult({ content: [{ type: "text", text: "..." }], details: undefined }, { expanded: false, isPartial: false }, theme, ctx);
 component.render(200).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""));   // → 纯文本行，可断言
 ```
@@ -189,5 +189,5 @@ console.log(execCalls.length, execCalls[0]);
 ## 参考
 
 - pi 扩展文档：`<pi>/docs/extensions.md`，`<pi>` 是 pi 包根目录（`"$(npm root -g)/@earendil-works/pi-coding-agent"`；用 `readlink -f $(command -v pi)` 推导会得到 `~/AppData`，因为 npm 装的是 `.cmd` 包装）；分文件源码在 `<pi>/dist/core/`、`<pi>/dist/modes/`，避开 `<pi>/dist/bundle/`
-- 实现参考：`D:/code/pi-packages/packages/` 下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
+- 实现参考：`packages/` 下已有同名覆盖、bash 后端包装、会话控制等各类实例，用 `ls` / `rg` 按需定位；**不在本技能里固定具体插件名**，插件会移动或改用途，写死的路径会腐烂
 - 跨扩展取 pi-permission-system 服务：读 `Symbol.for("@gotgenes/pi-permission-system:session-services")` 的 Map，按 sessionId 取值；旧 `Symbol.for("...:service")` 槽自 29.0.0 起已废弃，读它只会静默拿到 undefined

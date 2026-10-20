@@ -11,7 +11,8 @@
 	],
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/liuxincuit/pi-codegraph.git"
+		"url": "git+https://github.com/liuxincuit/pi-packages.git",
+		"directory": "packages/codegraph"
 	},
 	"author": "liuxincuit",
 	"license": "MIT",

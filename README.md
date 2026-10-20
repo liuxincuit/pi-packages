@@ -12,6 +12,7 @@ pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑
 | `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 未发布 |
 | `@liuxincuit/pi-costtime` | `packages/costtime` | working 行显示每轮耗时 | 未发布 |
 | `@liuxincuit/pi-deepseek-web` | `packages/deepseek-web` | DeepSeek 的 `web_search` / `web_fetch` | 未发布 |
+| `@liuxincuit/pi-extension-dev` | `packages/extension-dev` | pi 扩展开发与验证参考 | 未发布 |
 | `@liuxincuit/pi-fix-nul-redirect` | `packages/fix-nul-redirect` | 把 `> nul` 改写为 `> /dev/null` | 未发布 |
 | `@liuxincuit/pi-inject-model-name` | `packages/inject-model-name` | 把当前模型名注入系统提示 | 未发布 |
 | `@liuxincuit/pi-model-profiles` | `packages/model-profiles` | `/profile` 档案切换 | 未发布 |
@@ -36,10 +37,10 @@ pi install npm:@liuxincuit/pi-codegraph
 pi install npm:@liuxincuit/pi-skills
 ```
 
-从本地工作区安装单个插件：
+从本地工作区安装单个插件（在仓库根执行）：
 
 ```bash
-pi install D:/code/pi-packages/packages/costtime
+pi install ./packages/costtime
 ```
 
 本地路径包不会被安装依赖，运行时依赖由 pi 宿主提供。需要 typecheck 或 smoke 时先在仓库根执行 `npm install`。
@@ -82,4 +83,4 @@ packages/costtime/
 
 ## 相关仓库
 
-- `D:/code/skills`：技能集合与依赖技能的工作流，继续通过 `D:/code/skills` 加载 skills。
+- skills 仓库：技能集合与依赖技能的工作流

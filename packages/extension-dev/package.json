@@ -1,0 +1,11 @@
+{
+  "name": "@liuxincuit/pi-extension-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "pi 扩展开发与验证参考",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["./skills"]
+  },
+  "files": ["skills/"]
+}

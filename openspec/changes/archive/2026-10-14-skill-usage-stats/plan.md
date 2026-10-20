@@ -124,7 +124,7 @@ git commit -m "feat(skill-manager): 新增用量日志事件类型与序列化"
 
 ```ts
 test("isSkillFile 只认以 /SKILL.md 结尾的路径", () => {
-	assert.equal(isSkillFile("D:\\a\\b\\SKILL.md"), true);
+	assert.equal(isSkillFile("X:\\a\\b\\SKILL.md"), true);
 	assert.equal(isSkillFile("skills/foo/SKILL.md"), true);
 	assert.equal(isSkillFile("skills/foo/skill.md"), false);
 	assert.equal(isSkillFile("skills/foo/README.md"), false);
@@ -132,19 +132,19 @@ test("isSkillFile 只认以 /SKILL.md 结尾的路径", () => {
 });
 
 test("normalizeSkillPath 把相对与反斜杠写法归一到同一结果", () => {
-	const abs = "D:/code/skills/skills/foo/SKILL.md";
-	assert.equal(normalizeSkillPath("D:\\code\\skills\\skills\\foo\\SKILL.md", "D:/code"), abs);
-	assert.equal(normalizeSkillPath("skills/foo/SKILL.md", "D:/code/skills"), abs);
-	assert.equal(normalizeSkillPath("./skills/foo/SKILL.md", "D:/code/skills"), abs);
-	assert.equal(normalizeSkillPath(abs, "D:/elsewhere"), abs);
+	const abs = "/abs/skills/skills/foo/SKILL.md";
+	assert.equal(normalizeSkillPath("X:\\code\\skills\\skills\\foo\\SKILL.md", "/abs/code"), abs);
+	assert.equal(normalizeSkillPath("skills/foo/SKILL.md", "/abs/skills"), abs);
+	assert.equal(normalizeSkillPath("./skills/foo/SKILL.md", "/abs/skills"), abs);
+	assert.equal(normalizeSkillPath(abs, "/abs/elsewhere"), abs);
 });
 
 test("normalizeSkillPath 不碰大小写", () => {
-	assert.equal(normalizeSkillPath("D:/Code/Foo/SKILL.md", "D:/x"), "D:/Code/Foo/SKILL.md");
+	assert.equal(normalizeSkillPath("/abs/Code/Foo/SKILL.md", "/abs/x"), "/abs/Code/Foo/SKILL.md");
 });
 
 test("skillNameOf 取父目录名", () => {
-	assert.equal(skillNameOf("D:/code/skills/skills/foo/SKILL.md"), "foo");
+	assert.equal(skillNameOf("/abs/skills/skills/foo/SKILL.md"), "foo");
 });
 ```
 
@@ -156,7 +156,7 @@ Expected: FAIL —— `isSkillFile is not a function`
 - [ ] **Step 3: 实现**
 
 `isSkillFile`：先把 `\` 换成 `/`，再判 `endsWith("/SKILL.md")`。
-`normalizeSkillPath`：`\` → `/`；判定是否绝对（以 `/` 开头，或第二个字符是 `:`）；相对则用 `posix.join(cwd, p)` 再 `posix.normalize`；绝对路径也走一次 `posix.normalize`。**cwd 自身也要先做 `\` → `/`**，否则 Windows 的 `D:\code` 会拼出混用分隔符的路径。**不做大小写转换。**
+`normalizeSkillPath`：`\` → `/`；判定是否绝对（以 `/` 开头，或第二个字符是 `:`）；相对则用 `posix.join(cwd, p)` 再 `posix.normalize`；绝对路径也走一次 `posix.normalize`。**cwd 自身也要先做 `\` → `/`**，否则 Windows 的 `/abs/code` 会拼出混用分隔符的路径。**不做大小写转换。**
 `skillNameOf`：按 `/` 切分后取倒数第二段。
 
 `import path from "node:path"` 已在 Task 1 引入；这里用 `path.posix`。
@@ -273,7 +273,7 @@ git commit -m "feat(skill-manager): 用量日志读取与容错"
 const NOW = new Date("2026-10-13T12:00:00.000Z");
 const at = (hoursAgo: number) => new Date(NOW.getTime() - hoursAgo * 3600_000).toISOString();
 const ev = (hoursAgo: number, name: string): UsageEvent =>
-	({ ts: at(hoursAgo), via: "read", path: `D:/s/${name}/SKILL.md`, session: "s", cwd: "D:/s" });
+	({ ts: at(hoursAgo), via: "read", path: `/abs/s/${name}/SKILL.md`, session: "s", cwd: "/abs/s" });
 
 test("USAGE_WINDOWS 是五个递增的累积窗口", () => {
 	assert.deepEqual(USAGE_WINDOWS.map((w) => w.label), ["3天", "7天", "1月", "3月", "半年"]);
@@ -431,9 +431,9 @@ test("shouldCommitRead 只在真的执行且没出错时为真", () => {
 
 test("PendingReads 取出即删除，重复取返回 undefined", () => {
 	const p = new PendingReads();
-	p.record("c1", "D:/s/foo/SKILL.md");
+	p.record("c1", "/abs/s/foo/SKILL.md");
 	assert.equal(p.size, 1);
-	assert.equal(p.take("c1"), "D:/s/foo/SKILL.md");
+	assert.equal(p.take("c1"), "/abs/s/foo/SKILL.md");
 	assert.equal(p.take("c1"), undefined);
 	assert.equal(p.size, 0);
 });
@@ -500,7 +500,7 @@ git commit -m "feat(skill-manager): read 通道 pending 表与提交判定"
 
 - [ ] **Step 2: 验证写入一条 read 记录**
 
-Run: 在 pi 里让模型读取任一 SKILL.md（例如「读一下 D:/code/skills/skills/retrospective/SKILL.md」），然后
+Run: 在 pi 里让模型读取任一 SKILL.md（例如「读一下 /abs/skills/skills/retrospective/SKILL.md」），然后
 
 ```bash
 tail -3 "$(node -e 'console.log(require("os").homedir())')/.pi/agent/extensions/pi-skills/usage.jsonl"
@@ -575,25 +575,25 @@ git commit -m "feat(skill-manager): agent_end 清空 pending 表"
 
 ```ts
 const fakeParse = (text: string) =>
-	text.startsWith("<skill ") ? { location: "D:/s/foo/SKILL.md" } : null;
+	text.startsWith("<skill ") ? { location: "/abs/s/foo/SKILL.md" } : null;
 
 test("explicitSkillPath 从 user 消息里取 location 并归一化", () => {
-	const msg = { role: "user", content: [{ type: "text", text: "<skill name=\"foo\" location=\"D:/s/foo/SKILL.md\">…</skill>" }] };
-	assert.equal(explicitSkillPath(msg, fakeParse, "D:/elsewhere"), "D:/s/foo/SKILL.md");
+	const msg = { role: "user", content: [{ type: "text", text: "<skill name=\"foo\" location=\"/abs/s/foo/SKILL.md\">…</skill>" }] };
+	assert.equal(explicitSkillPath(msg, fakeParse, "/abs/elsewhere"), "/abs/s/foo/SKILL.md");
 });
 
 test("explicitSkillPath 对非 user 消息返回 undefined", () => {
-	assert.equal(explicitSkillPath({ role: "assistant", content: [{ type: "text", text: "<skill …" }] }, fakeParse, "D:/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "assistant", content: [{ type: "text", text: "<skill …" }] }, fakeParse, "/abs/s"), undefined);
 });
 
 test("explicitSkillPath 的消息里没有 skill 块时返回 undefined", () => {
-	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "普通消息" }] }, fakeParse, "D:/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "普通消息" }] }, fakeParse, "/abs/s"), undefined);
 });
 
 test("explicitSkillPath 对解析失败、content 非数组、location 缺失都返回 undefined", () => {
-	assert.equal(explicitSkillPath({ role: "user", content: "字符串" }, fakeParse, "D:/s"), undefined);
-	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => null, "D:/s"), undefined);
-	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => ({}), "D:/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: "字符串" }, fakeParse, "/abs/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => null, "/abs/s"), undefined);
+	assert.equal(explicitSkillPath({ role: "user", content: [{ type: "text", text: "<skill " }] }, () => ({}), "/abs/s"), undefined);
 });
 ```
 
@@ -687,7 +687,7 @@ git commit -m "feat(skill-manager): 显式调用采集钩子"
 
 ```ts
 test("buildStats 按 path 归一后把记录分到三段", () => {
-	const loaded = [{ name: "foo", filePath: "D:/s/foo/SKILL.md" }, { name: "bar", filePath: "D:/s/bar/SKILL.md" }];
+	const loaded = [{ name: "foo", filePath: "/abs/s/foo/SKILL.md" }, { name: "bar", filePath: "/abs/s/bar/SKILL.md" }];
 	const events = [ev(5, "foo"), ev(5, "ghost")];
 	const input = buildStats(events, loaded, NOW);
 	assert.deepEqual(input.loaded.map((e) => e.name), ["foo"]);
@@ -696,7 +696,7 @@ test("buildStats 按 path 归一后把记录分到三段", () => {
 });
 
 test("buildStats 按 name 聚合不同来源的同名 skill", () => {
-	const events = [ev(5, "foo"), { ...ev(5, "foo"), path: "D:/other/foo/SKILL.md" }];
+	const events = [ev(5, "foo"), { ...ev(5, "foo"), path: "/abs/other/foo/SKILL.md" }];
 	const input = buildStats(events, [], NOW);
 	assert.equal(input.unloaded.length, 1);
 	assert.equal(input.unloaded[0]!.counts[4], 2);
@@ -708,7 +708,7 @@ test("buildStats 按半年次数降序、同名按名排", () => {
 });
 
 test("buildStats 在空日志时把全部已加载放进 unrecorded 并保持原名序", () => {
-	const loaded = [{ name: "z", filePath: "D:/s/z/SKILL.md" }, { name: "a", filePath: "D:/s/a/SKILL.md" }];
+	const loaded = [{ name: "z", filePath: "/abs/s/z/SKILL.md" }, { name: "a", filePath: "/abs/s/a/SKILL.md" }];
 	const input = buildStats([], loaded, NOW);
 	assert.deepEqual(input.unrecorded, ["a", "z"]);
 	assert.deepEqual(input.loaded, []);
@@ -799,7 +799,7 @@ git commit -m "feat(skill-manager): 统计表数据组装与渲染"
 
 ```ts
 test("renderStats 空日志时三段只剩无记录段且不报错", () => {
-	const out = renderStats(buildStats([], [{ name: "a", filePath: "D:/s/a/SKILL.md" }], NOW), { now: NOW });
+	const out = renderStats(buildStats([], [{ name: "a", filePath: "/abs/s/a/SKILL.md" }], NOW), { now: NOW });
 	// 不能用 /当前加载\b/：JS 的 \b 在两个 CJK 字符之间不成立，那段标题真被印出来也照样通过。
 	assert.equal(out.split("\n").some((l) => l.trim() === "当前加载"), false);
 	assert.match(out, /当前加载但无记录/);
@@ -1077,8 +1077,8 @@ git commit -m "docs: README 补充 /skills stats 与统计起点说明"
 
 ```bash
 node --input-type=module -e "
-const { loadExtensions } = await import('file://C:/Users/liuxi/AppData/Roaming/npm/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js');
-const r = await loadExtensions(['file:///D:/code/pi-skills/pi/extensions/skill-manager/index.ts']);
+const { loadExtensions } = await import('file:///abs/pi-root/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js');
+const r = await loadExtensions(['file:///abs/pi-skills/pi/extensions/skill-manager/index.ts']);
 console.log(JSON.stringify(r.errors, null, 2));
 "
 ```

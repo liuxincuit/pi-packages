@@ -27,7 +27,7 @@
 
 - [x] 5.1 端到端验证三层优先级：对同一 skill 分别设置全局禁用、项目启用、会话禁用，逐层确认模型可见性随之变化；验证：每步读取 session JSONL 的 `sections.skills`
 - [x] 5.2 验证未受信任项目不读取项目配置；验证：`pi -p -na`（不信任项目）时项目级设定不生效，加 `-a` 后生效
-- [x] 5.3 将 `D:/code/pi-skills` 加入 `~/.pi/agent/settings.json` 的 `packages`，使扩展常驻可用（修改用户全局配置，执行前需用户确认）；验证：重启 pi 后 `/skills` 无需 `-e` 即可用
+- [x] 5.3 将 `/abs/pi-skills` 加入 `~/.pi/agent/settings.json` 的 `packages`，使扩展常驻可用（修改用户全局配置，执行前需用户确认）；验证：重启 pi 后 `/skills` 无需 `-e` 即可用
 
 ## 6. 命令参数补全
 
