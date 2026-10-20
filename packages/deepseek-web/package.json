@@ -1,13 +1,24 @@
 {
   "name": "@liuxincuit/pi-deepseek-web",
   "version": "0.1.0",
-  "private": true,
   "description": "用 DeepSeek Search/Fetch API 提供 web_search 与 web_fetch",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "deepseek",
+    "web-search",
+    "web-fetch"
   ],
+  "license": "MIT",
+  "author": "liuxincuit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuxincuit/pi-packages.git",
+    "directory": "packages/deepseek-web"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "pi": {
     "extensions": [
@@ -19,6 +30,11 @@
     "api.ts",
     "config.ts",
     "logic.ts",
+    "LICENSE",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
 }

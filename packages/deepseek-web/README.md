@@ -2,6 +2,21 @@
 
 用 DeepSeek 官方 [Search / Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search) 提供 `web_search` 与 `web_fetch` 两个工具，替代 pi-web-access。
 
+## 安装
+
+```bash
+pi install npm:@liuxincuit/pi-deepseek-web
+```
+
+`@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui`、`typebox` 由 pi 宿主提供，不需要额外安装。
+装完先写 `~/.pi/agent/extensions/deepseek-web/config.json`（见「配置」），`/reload` 后才生效。
+
+从源码调试时用本地路径安装（在仓库根执行）：
+
+```bash
+pi install ./packages/deepseek-web
+```
+
 ## 做什么
 
 | | pi-web-access | 本扩展 |
@@ -89,16 +104,18 @@ DeepSeek 的两个端点各 5 QPS（账户级、互相独立），所以多 quer
 
 ## 调试
 
+以下命令都在仓库根执行。
+
 ```bash
 # 纯逻辑单测（零依赖，Node ≥ 22）
-node --test pi/extensions/deepseek-web/*.test.mts
+npm test
 
 # 用 pi 自己的 loader 加载本仓库全部扩展（比打包更能发现 jiti 解析与工厂抛错）：
 # errors 为空、且工具列表里出现 web_search/web_fetch 才算通过。
 # 脚本见 skills/pi-extension-dev/SKILL.md 的「验证」节。
 
 # 端到端：真实 pi 会话里让模型调一次
-pi -p --no-extensions -e "$(pwd)/pi/extensions/deepseek-web/index.ts" \
+pi -p --no-extensions -e "$(pwd)/packages/deepseek-web/index.ts" \
   --session-dir .tmp/s1 "调用 web_search 搜索 'OpenSpec 是什么'，只回复第一条结果的标题"
 ```
 
