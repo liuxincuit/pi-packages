@@ -1,91 +1,90 @@
-# pi-packages
+# pi-kit
 
-pi 插件集合。每个插件一个独立 npm 包，可单独安装，不捆绑。
-
-## 包列表
-
-| 包 | 目录 | 做什么 | 发布 |
-|---|---|---|---|
-| `@liuxincuit/pi-ask-user-question` | `packages/ask-user-question` | 让模型把选择题交给用户 | 已发布 0.1.0 |
-| `@liuxincuit/pi-auto-prepend` | `packages/auto-prepend` | 每 N 轮注入一条自定义消息 | 未发布 |
-| `@liuxincuit/pi-bash-approver` | `packages/bash-approver` | 自动批准 bash 命令的权限询问 | 已发布 0.1.0 |
-| `@liuxincuit/pi-compact-tools` | `packages/compact-tools` | 紧凑渲染内置工具 | 已发布 0.1.0 |
-| `@liuxincuit/pi-costtime` | `packages/costtime` | working 行显示每轮耗时 | 已发布 0.1.0 |
-| `@liuxincuit/pi-deepseek-web` | `packages/deepseek-web` | DeepSeek 的 `web_search` / `web_fetch` | 已发布 0.1.0 |
-| `@liuxincuit/pi-fix-nul-redirect` | `packages/fix-nul-redirect` | 把 `> nul` 改写为 `> /dev/null` | 已发布 0.1.0 |
-| `@liuxincuit/pi-inject-model-name` | `packages/inject-model-name` | 把当前模型名注入系统提示 | 已发布 0.1.0 |
-| `@liuxincuit/pi-model-profiles` | `packages/model-profiles` | `/profile` 档案切换 | 未发布 |
-| `@liuxincuit/pi-notify-on-reply` | `packages/notify-on-reply` | Windows 回复通知 | 未发布 |
-| `@liuxincuit/pi-persistent-history` | `packages/persistent-history` | 跨会话保留输入历史 | 未发布 |
-| `@liuxincuit/pi-graph` | `packages/pi-graph` | `/pi-graph` 查看注册全貌 | 未发布 |
-| `@liuxincuit/pi-rules-context` | `packages/rules-context` | 按文件路径注入规则 | 已发布 0.1.0 |
-| `@liuxincuit/pi-subdir-context` | `packages/subdir-context` | 加载子目录的 `AGENTS.md` | 已发布 0.1.0 |
-| `@liuxincuit/pi-tree-summaries` | `packages/tree-summaries` | 会话树摘要预设 | 已发布 0.1.0 |
-| `@liuxincuit/pi-codegraph` | `packages/codegraph` | CodeGraph 符号与调用路径 | 已发布 0.2.0，skills 声明修复待发版 |
-| `@liuxincuit/pi-skills` | `packages/skill-manager` | `/skills` 管理与用量统计 | 已发布 |
-
-`package.json` 里带 `private: true` 的包暂不发布。`codegraph` 和 `skill-manager` 保留各自已发布的包名与包内布局。
-
-技能与提示词不是插件，不单独建包：`skills/` 与 `prompts/` 由仓库根的 `package.json` 统一声明，新增条目直接放文件即可。
+一个 pi 包，装齐我在多台机器上用的扩展、技能与提示词。`pi update --extensions` 一条命令同步。
 
 ## 安装
 
-包名就是上表里的 `@liuxincuit/pi-*`，挑一个装：
-
 ```bash
-pi install npm:@liuxincuit/pi-deepseek-web
+pi install npm:@liuxincuit/pi-kit
 ```
 
-表里标「未发布」的只能走本地路径；开发中的包也用本地路径，这样改源码 `/reload` 就生效（npm 装的版本不会跟着仓库变）。
+依赖只有 pi 宿主提供的 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui`、`typebox`，不需要额外安装。装完 `/reload` 生效。
 
-```bash
-pi install ./packages/costtime
-```
-
-加载本仓库的技能与提示词（同样在仓库根执行）：
+本地开发用仓库根直接装：
 
 ```bash
 pi install .
 ```
 
-本地路径包不会被安装依赖，运行时依赖由 pi 宿主提供。需要 typecheck 或 smoke 时先在仓库根执行 `npm install`。
+## 里面有什么
+
+`pi` 字段声明三个约定目录，pi 按它们加载：
+
+```json
+"pi": {
+  "extensions": ["./extensions"],
+  "skills": ["./skills"],
+  "prompts": ["./prompts/*.md"]
+}
+```
+
+### 扩展（17 个）
+
+每个扩展一个目录，入口固定是 `index.ts`；辅助模块放在同一目录，`extensions/` 的一层子目录只认 `index.ts`，所以辅助文件不会被误当扩展加载。
+
+| 目录 | 做什么 |
+|---|---|
+| `ask-user-question/` | 让模型把选择题交给用户，而不是自己猜 |
+| `auto-prepend/` | 每 N 轮自动往对话注入一条自定义消息 |
+| `bash-approver/` | 自动批准 pi-permission-system 对 bash 命令的询问 |
+| `codegraph/` | CodeGraph 符号与调用路径，含 `/codegraph-*` 命令 |
+| `compact-tools/` | 覆盖内置 `read`/`bash`/`edit`/`write` 的紧凑渲染，附 bash 默认超时与 `.env` 注入 |
+| `costtime/` | working 行显示每轮耗时，结束后写入对话流 |
+| `deepseek-web/` | 用 DeepSeek Search/Fetch API 提供 `web_search` 与 `web_fetch` |
+| `fix-nul-redirect/` | 把 bash 命令里的 `> nul` 改写成 `> /dev/null` |
+| `inject-model-name/` | 把当前模型名注入系统提示 |
+| `model-profiles/` | `/profile` 按会话切换一组资源与系统提示 |
+| `notify-on-reply/` | Windows 上收到回复时弹系统通知 |
+| `persistent-history/` | 跨 `/reload`、`/new` 和新会话保留输入历史 |
+| `pi-graph/` | `/pi-graph` 查看插件与生命周期的注册全貌 |
+| `rules-context/` | 按文件路径注入规则 |
+| `skill-manager/` | `/skills` 管理与用量统计（数据目录固定 `pi-skills`） |
+| `subdir-context/` | 读取文件时自动加载该文件所在子目录的 `AGENTS.md` |
+| `tree-summaries/` | 把「回到会话树开头 + 留下上下文」做成 `/tree:<名字>` 预设 |
+
+每个目录下有自己的 `README.md`，写清了配置、调试步骤和陷阱。
+
+几个有副作用的，装之前先看对应 README：
+
+- `compact-tools` 不只改渲染：默认 120 秒超时、注入 `~/.pi/agent/.env`、移除代理变量
+- `bash-approver` 需要 `@gotgenes/pi-permission-system`，还要在它的 `authorizerChain` 里显式启用
+- `persistent-history` 用 `setEditorComponent` 替换编辑器，和同样改编辑器的扩展互斥
+- `notify-on-reply` 仅 Windows
+
+### 技能与提示词
+
+| 路径 | 是什么 |
+|---|---|
+| `skills/pi-extension-dev/` | pi 扩展开发与验证的流程 |
+| `skills/codegraph/` | CodeGraph 查询技能的说明 |
+| `prompts/prompt_init.md` 等 4 个 | 提示词模板 |
 
 ## 本地开发
 
-验证所有扩展能加载：
+仓库无运行时依赖。改完扩展后：
 
 ```bash
-node .tmp/verify-load.mjs
+npm test                       # 纯逻辑单测（Node >= 22）
+node .tmp/verify-kit.mjs 17    # 用 pi 自己的包管理器 + loader 全量加载，核对 17 个扩展
 ```
 
-跑纯逻辑单测：
+`verify-kit.mjs` 用隔离的临时 `settings.json`，不动真实配置，判据是 `reduce errors` 与 `load errors` 都为空、且扩展数等于预期。
 
-```bash
-npm test
-```
+需要 pi 运行时的行为（对话框、切会话、消息注入、UI 渲染）只能靠 TUI 手动验证，步骤写在各扩展的 README「调试」节。
 
-`codegraph` 额外有类型检查和冒烟测试：
+## 结构约定
 
-```bash
-npm run typecheck --workspace=@liuxincuit/pi-codegraph
-npm run smoke --workspace=@liuxincuit/pi-codegraph
-```
-
-## 包布局
-
-普通包：
-
-```
-packages/costtime/
-├── package.json      # pi.extensions 指向 ./index.ts
-├── index.ts
-└── README.md
-```
-
-带辅助模块的包把辅助文件一起列进 `files`；`tree-summaries` 还要带上 `builtin/`。
-
-`attic/next-phase` 是停用扩展，不是包，不参与加载。
-
-## 相关仓库
-
-- skills 仓库：技能集合与依赖技能的工作流
+- 扩展放 `extensions/<名字>/index.ts`，辅助模块同目录。
+- 带数据文件的扩展要保证数据随包分发：`tree-summaries` 的 `builtin/`、`codegraph` 的 `docs/` 都在各自目录内，路径用 `import.meta.url` 定位，不依赖仓库位置。
+- 新增技能放 `skills/<名字>/SKILL.md`，新增提示词放 `prompts/`。
+- `files` 排除 `*.test.mts`，其余随 `extensions/`、`skills/`、`prompts/` 整个打包。
