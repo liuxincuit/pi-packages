@@ -1,7 +1,6 @@
 {
   "name": "@liuxincuit/pi-kit",
   "version": "0.1.0",
-  "private": true,
   "description": "一套 pi 扩展、技能与提示词的合集，一条命令装齐",
   "keywords": [
     "pi-package",
