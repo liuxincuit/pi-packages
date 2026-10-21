@@ -5,3 +5,4 @@ node_modules/
 .codegraph/
 *.tgz
 package/
+.pi/
