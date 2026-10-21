@@ -16,6 +16,62 @@ pi install npm:@liuxincuit/pi-kit
 pi install .
 ```
 
+## 只装其中一部分
+
+整包默认全开，17 个扩展都加载。不想要其中几个有两种做法。
+
+### 改 settings.json
+
+把 `~/.pi/agent/settings.json` 里那条字符串改写成对象，加 `extensions` 过滤列表：
+
+```json
+{
+  "packages": [
+    {
+      "source": "npm:@liuxincuit/pi-kit",
+      "extensions": [
+        "!extensions/notify-on-reply/index.ts",
+        "!extensions/compact-tools/index.ts"
+      ]
+    }
+  ]
+}
+```
+
+结果就是只去掉这两个，其余 15 个照常加载。语法（都实测过）：
+
+| 写法 | 效果 |
+|---|---|
+| 不写 `extensions` 字段 | 全部加载 |
+| `["!extensions/<名字>/index.ts"]` | 只去掉它，其余照常 |
+| `["!extensions/<名字>/**"]` | 同上，按目录排除 |
+| `[]` | 一个扩展都不加载 |
+| `["extensions/pi-graph/index.ts", "extensions/costtime/index.ts"]` | 白名单，只加载这两个 |
+| `["!extensions/*/index.ts", "+extensions/costtime/index.ts"]` | 全关，再加回一个 |
+
+`+` 是强制包含（精确路径），`-` 是强制排除（连包含和强制包含一起盖掉）。
+
+技能与提示词用同样语法，写在 `skills` / `prompts` 字段里，路径是 `skills/<名字>/SKILL.md`、`prompts/<文件名>.md`：
+
+```json
+{
+  "source": "npm:@liuxincuit/pi-kit",
+  "skills": ["!skills/codegraph/SKILL.md"],
+  "prompts": []
+}
+```
+
+要点：
+
+- **路径相对包根**，不是相对你的 cwd。写错路径不会报错，只是过滤不生效。
+- **技能与扩展是独立的**：去掉 `codegraph` 扩展，`skills/codegraph` 还会加载，要一起去掉得在 `skills` 里单独排除。
+- 过滤只能**收窄**包自己声明过的资源，无法加出包里没有的东西。
+- 改完 `/reload`。
+
+### 用 pi config
+
+跑 `pi config`，Tab 切到包作用域，逐项开关扩展、技能、提示词。效果与手写 `settings.json` 相同，只是不用记路径。
+
 ## 里面有什么
 
 `pi` 字段声明三个约定目录，pi 按它们加载：
