@@ -63,9 +63,20 @@ const result = await loadExtensions(entryPaths, process.cwd());
 只有根一个包，在仓库根执行：
 
 ```bash
-npm version patch     # 或 minor / major
-npm publish
+npm test
+npm version patch --no-git-tag-version   # 或 minor / major
 ```
+
+`npm version` 会同时改 `package.json` 与 `package-lock.json`，两个都要提交：
+
+```bash
+git add package.json package-lock.json
+git commit -m "chore(kit): 准备发布 <版本>"
+npm publish --registry=https://registry.npmjs.org/
+```
+
+**不要省略 `--registry`。** 本机 npm 默认 registry 是 `registry.npmmirror.com`（只读镜像），
+而 `_authToken` 属于 npmjs：直接 `npm publish` 会认证失败或报到镜像上。
 
 不要用 `--workspaces`（仓库已没有 workspace）。发布前：
 
@@ -73,7 +84,9 @@ npm publish
 2. `npm pack --dry-run` 看文件清单，确认没漏运行时文件、也没混进 `*.test.mts` 或开发资产
 3. 用隔离 settings 加载一次预期数量的扩展
 
-时序参考：`npm publish` 后 npmjs 上约 5 分钟才可查（提示 "being processed"），npmmirror 随后几分钟内跟上。所以发布后不要立刻 `pi install`，先 `npm view` 轮询。
+时序参考（2026-10 实测，0.1.1）：`npm publish` 后 npmjs 约 2.5 分钟可查，期间 `npm view`
+可能返回旧版本；npmmirror 本次在 npmjs 可查时已经同步。所以发布后不要立刻 `pi install`，
+先轮询 `npm view @liuxincuit/pi-kit version`（npmjs 与 npmmirror 各查一次）。
 
 ## 数据目录
 
