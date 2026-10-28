@@ -84,7 +84,7 @@ pi install .
 }
 ```
 
-### 扩展（17 个）
+### 扩展（18 个）
 
 每个扩展一个目录，入口固定是 `index.ts`；辅助模块放在同一目录，`extensions/` 的一层子目录只认 `index.ts`，所以辅助文件不会被误当扩展加载。
 
@@ -93,6 +93,7 @@ pi install .
 | `ask-user-question/` | 让模型把选择题交给用户，而不是自己猜 |
 | `auto-prepend/` | 每 N 轮自动往对话注入一条自定义消息 |
 | `bash-approver/` | 自动批准 pi-permission-system 对 bash 命令的询问 |
+| `claude-skills/` | 加载项目 `.claude/skills` 里的 Claude Code 技能 |
 | `codegraph/` | CodeGraph 符号与调用路径，含 `/codegraph-*` 命令 |
 | `compact-tools/` | 覆盖内置 `read`/`bash`/`edit`/`write` 的紧凑渲染，附 bash 默认超时与 `.env` 注入 |
 | `costtime/` | working 行显示每轮耗时，结束后写入对话流 |
@@ -131,7 +132,7 @@ pi install .
 
 ```bash
 npm test                       # 纯逻辑单测（Node >= 22）
-node .tmp/verify-kit.mjs 17    # 用 pi 自己的包管理器 + loader 全量加载，核对 17 个扩展
+node .tmp/verify-kit.mjs 18    # 用 pi 自己的包管理器 + loader 全量加载，核对 18 个扩展
 ```
 
 `verify-kit.mjs` 用隔离的临时 `settings.json`，不动真实配置，判据是 `reduce errors` 与 `load errors` 都为空、且扩展数等于预期。
