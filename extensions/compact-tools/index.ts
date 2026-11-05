@@ -368,48 +368,6 @@ function isTruncated(r: any): boolean {
 	return toRecord(toRecord(r?.details).truncation).truncated === true;
 }
 
-/** Partial (in-progress) header: spinner + elapsed while executing, streamed text on expansion. */
-function renderPartialText(
-	label: string,
-	detail: string,
-	parts: Array<{ text: string; color?: string }> | undefined,
-	t: any,
-	c: any,
-): Text {
-	const text = c?.lastComponent instanceof Text ? c.lastComponent : new Text("", 0, 0);
-	const toolCallId = typeof c?.toolCallId === "string" ? c.toolCallId : undefined;
-	const animating = toolCallId !== undefined && c?.executionStarted === true;
-
-	const build = () => {
-		let spinnerAndElapsed = "";
-		if (animating && toolCallId !== undefined) {
-			const state = getOrCreateSpinnerState(toolCallId);
-			spinnerAndElapsed = t.fg("warning", SPINNER_CHARS[state.frame]) + " " + t.fg("muted", "· " + formatElapsed(Date.now() - state.start)) + " ";
-		}
-		const suffix = (parts ?? []).map((p) => " " + t.fg(p.color ?? "muted", p.text)).join("");
-		const det = detail ? truncateDetail(detail) : "";
-		text.setText(t.fg("dim", BORDER) + spinnerAndElapsed + t.bold(label + " ") + det + suffix);
-	};
-
-	if (animating && toolCallId !== undefined) {
-		const state = getOrCreateSpinnerState(toolCallId);
-		if (!state.timer && typeof c?.invalidate === "function") {
-			state.timer = setInterval(() => {
-				if (spinnerStates.get(toolCallId) !== state) {
-					clearInterval(state.timer);
-					return;
-				}
-				state.frame = (state.frame + 1) % SPINNER_CHARS.length;
-				build();
-				c.invalidate();
-			}, SPINNER_INTERVAL_MS);
-		}
-	}
-
-	build();
-	return text;
-}
-
 export default function (pi: any) {
 	const cwd = process.cwd();
 
@@ -428,13 +386,6 @@ export default function (pi: any) {
 			parameters: tool.parameters,
 			renderShell: "self",
 			async execute(toolCallId: string, ...args: any[]) {
-				// renderResult 只在有 result 时被调用，不主动发一次空 partial 的话，
-				// 不产生流式输出的工具（read/edit/write）执行期间整行不可见。
-				// 内置 bash 工具在自己的 execute 开头做同样的事。
-				const onUpdate = args[2];
-				if (typeof onUpdate === "function") {
-					onUpdate({ content: [], details: undefined });
-				}
 				try {
 					return await tool.execute(toolCallId, ...args);
 				} finally {
@@ -442,60 +393,104 @@ export default function (pi: any) {
 				}
 			},
 			renderCall(a: any, t: any, c: any) {
-				// 只在参数流式期间出调用行：那时还没有 partial result，renderResult 不会被调，
-				// 否则模型产出参数时界面整段空白。执行开始或已有 result 时让 renderResult 独占，
-				// 也包括 /reload 重放历史（那时不会再发 tool_execution_start）。
-				if (c?.executionStarted || !c?.isPartial) return new Container();
+				// 调用行由 renderCall 常驻绘制，执行中也绝不返回空组件：
+				// tool_execution_start 到首个 partial result 之间还要过 schema 校验和 tool_call 钩子，
+				// 那段时间一旦返回空 Container，自绘 shell 会渲染成 0 行，整行从布局里消失，
+				// 等 spinner 出现时再跳回来。renderResult 只负责标题以下的内容。
 				const { label: customLabel, detail, parts } = getDetail(a || {}, t, c);
+				const shownLabel = customLabel ?? label;
 				const text = c?.lastComponent instanceof Text ? c.lastComponent : new Text("", 0, 0);
+				const color = c?.isError === true ? "error" : "success";
+
+				// 终态：标题换成成功/失败配色，展开时铺开完整命令
+				if (c?.isPartial === false) {
+					text.setText(
+						c?.expanded
+							? addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, color)
+							: titleLine(shownLabel, truncateDetail(detail), t, color, parts),
+					);
+					return text;
+				}
+
 				const suffix = (parts ?? []).map((p) => " " + t.fg(p.color ?? "muted", p.text)).join("");
-				text.setText(
-					t.fg("dim", BORDER) + t.bold((customLabel ?? label) + " ") + (detail ? truncateDetail(detail) : "") + suffix,
-				);
+				const toolCallId = typeof c?.toolCallId === "string" ? c.toolCallId : undefined;
+				// 展开态沿用旧行为：不挤 spinner，直接铺开完整命令
+				const animating = c?.expanded !== true && toolCallId !== undefined && c?.executionStarted === true;
+
+				const build = () => {
+					if (c?.expanded) {
+						text.setText(addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, "dim"));
+						return;
+					}
+					let spinnerAndElapsed = "";
+					if (animating && toolCallId !== undefined) {
+						const state = getOrCreateSpinnerState(toolCallId);
+						spinnerAndElapsed =
+							t.fg("warning", SPINNER_CHARS[state.frame]) +
+							" " +
+							t.fg("muted", "· " + formatElapsed(Date.now() - state.start)) +
+							" ";
+					}
+					text.setText(
+						t.fg("dim", BORDER) +
+							spinnerAndElapsed +
+							t.bold(shownLabel + " ") +
+							(detail ? truncateDetail(detail) : "") +
+							suffix,
+					);
+				};
+
+				if (animating && toolCallId !== undefined) {
+					const state = getOrCreateSpinnerState(toolCallId);
+					if (!state.timer && typeof c?.invalidate === "function") {
+						state.timer = setInterval(() => {
+							if (spinnerStates.get(toolCallId) !== state) {
+								clearInterval(state.timer);
+								return;
+							}
+							state.frame = (state.frame + 1) % SPINNER_CHARS.length;
+							build();
+							c.invalidate();
+						}, SPINNER_INTERVAL_MS);
+					}
+				}
+
+				build();
 				return text;
 			},
 			renderResult(r: any, o: any, t: any, c: any) {
-				const { label: customLabel, detail, parts } = getDetail(c?.args || {}, t, c);
-				const shownLabel = customLabel ?? label;
-				const err = isToolError(r, c);
-				// Partial (in-progress): spinner + any streamed text
+				const color = isToolError(r, c) ? "error" : "success";
+
+				// 执行中：标题（含 spinner）已经由 renderCall 画好，这里只铺开流式输出
 				if (o.isPartial) {
+					if (!o.expanded) return new Container();
 					const streamed = r.content?.filter((x: any) => x?.type === "text").map((x: any) => x.text).join("") || "";
-					if (!o.expanded || (!detail && !streamed)) {
-						return renderPartialText(shownLabel, detail, parts, t, c);
-					}
-					const lines = [];
-					if (detail) {
-						lines.push(addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, "dim"));
-					}
-					if (streamed) {
-						lines.push(addBorder(sanitizeAnsiForThemedOutput(streamed), t, "dim"));
-					}
-					return new Text(lines.join("\n"), 0, 0);
+					if (!streamed) return new Container();
+					return new Text(addBorder(sanitizeAnsiForThemedOutput(streamed), t, "dim"), 0, 0);
 				}
+
 				stopSpinner(c?.toolCallId); // ensure no timer survives a cancelled call
-				const tailParts: Array<{ text: string; color?: string }> = [...(parts ?? [])];
-				if (isTruncated(r)) tailParts.push({ text: "• truncated", color: "warning" });
-				const color = err ? "error" : "success";
-				if (!o.expanded) {
-					const title = titleLine(shownLabel, truncateDetail(detail), t, color, tailParts);
-					const summary = getSummary?.(r, o, t, c?.args || {}, err);
-					if (summary) {
-						return new Text(title + "\n" + t.fg("muted", "  " + summary), 0, 0);
+
+				if (o.expanded) {
+					const contentLines: string[] = [];
+					const partsText = r.content?.filter((x: any) => x?.type === "text").map((x: any) => x.text) || [];
+					if (r.details?.diff) partsText.push(r.details.diff);
+					for (const p of partsText) {
+						contentLines.push(
+							addBorder(prepareOutputLines(sanitizeAnsiForThemedOutput(p), o.expanded).join("\n"), t, color),
+						);
 					}
-					return new Text(title, 0, 0);
+					return contentLines.length > 0 ? new Text(contentLines.join("\n"), 0, 0) : new Container();
 				}
-				// Expanded: full detail + output, all lines use state color (dim/success/error)
-				const contentLines = [];
-				if (detail) {
-					contentLines.push(addBorder(t.bold(shownLabel + " ") + hardWrap(detail, MAX_CONTENT_LINE_LEN), t, color));
-				}
-				const partsText = r.content?.filter((c: any) => c?.type === "text").map((c: any) => c.text) || [];
-				if (r.details?.diff) partsText.push(r.details.diff);
-				for (const p of partsText) {
-					contentLines.push(addBorder(prepareOutputLines(sanitizeAnsiForThemedOutput(p), o.expanded).join("\n"), t, color));
-				}
-				return new Text(contentLines.join("\n"), 0, 0);
+
+				// 折叠态只画摘要行；没有摘要（如技能读取）就没有第二行
+				const summary = getSummary?.(r, o, t, c?.args || {}, color === "error");
+				const truncated = isTruncated(r);
+				if (!summary && !truncated) return new Container();
+				const line =
+					t.fg("muted", "  " + (summary ?? "")) +
+					(truncated ? `${summary ? " " : ""}${t.fg("warning", "• truncated")}` : "");
+				return new Text(line, 0, 0);
 			},
 		});
 	}

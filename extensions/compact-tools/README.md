@@ -42,6 +42,8 @@ pi install ./packages/compact-tools
 
 bash 超时：不传 `timeout` 跑 `sleep 200`，应在 120 秒时中断，且错误消息里附带默认超时的说明——用来区分“LLM 自己设的超时”和“扩展注入的默认超时”。LLM 显式传入的 `timeout` 原样透传，并保持 pi 原生的错误格式。
 
+执行期间不闪烁：让模型跑一条带输出的命令（如 `ls`）。参数流式结束后，命令行应在原处变成 `│ ⠋ · 0s $ <命令>`，整行不消失、不换位；命令结束后回落成一行标题 + 一行 `↳ ...` 摘要。
+
 ## 陷阱
 
 **超时改不动 `spawnHook`。** `spawnHook` 只能改 `command` / `cwd` / `env`，注入默认超时得整体包装 `operations`（`createLocalBashOperations()` 保持原生行为）。
@@ -50,8 +52,10 @@ bash 超时：不传 `timeout` 跑 `sleep 200`，应在 120 秒时中断，且�
 
 **`getDetail` 的第三个参数是 pi 的渲染上下文。** `expanded` / `isPartial` / `isError` / `cwd` 都在里面，技能折叠靠它判断；返回值多出的 `label` 字段可覆盖工具默认名，其余渲染分支照用。
 
-**`renderCall` 与 `renderResult` 有明确分工。** 只在参数流式期间出调用行（那时还没有 partial result，`renderResult` 不会被调，否则模型产出参数时界面整段空白）；执行开始或已有结果时让 `renderResult` 独占，包括 `/reload` 重放历史的情况——那时不会再发 `tool_execution_start`。
+**`renderCall` 永远不返回空组件。** 调用行（流式命令 / spinner / 终态标题）全程由 `renderCall` 画，`renderResult` 只画标题以下的内容。这不是风格问题：`tool_execution_start` 到首个 partial result 之间还要过 schema 校验和 `tool_call` 钩子（本机装了 `pi-permission-system`，每条 bash 都要解析一遍），那段时间若 `renderCall` 返回空 Container，自绘 shell 会渲染成 0 行，整行从布局里消失，等 spinner 出现再跳回来——就是“命令消失又出现”。pi 自带的 `renderers/bash.js`、`renderers/edit.js` 也是这个分工：标题常驻 call，result 只画正文。
 
-**要主动发一次空 partial。** `renderResult` 只在有 result 时被调用，read/edit/write 这类不产生流式输出的工具执行期间会整行不可见，所以 `execute` 开头手动 `onUpdate({ content: [], details: undefined })`。
+**终态判断看 `c.isPartial`，不是 `c.executionStarted`。** `/reload` 重放历史时不会再发 `tool_execution_start`，`executionStarted` 始终为 false；只有 `isPartial === false` 能可靠区分终态。终态配色靠上下文里的 `c.isError`，所以标题的失败色在 `renderCall` 里就能算。
+
+**`• truncated` 挂在摘要行。** 它来自 result 的 `details.truncation`，`renderCall` 拿不到，所以只能在 `renderResult` 里拼到 `↳ ...` 那行；没有摘要的技能行本来也不需要这个标记。
 
 **覆盖的是工具名而非实现细节**：`name` / `description` / `parameters` 全部沿用内置工具的定义，只替换渲染与执行包装。改完必须 `/reload` 才生效。
